@@ -11,10 +11,13 @@ from src.core.agent import AgentOrchestrator
 from src.memory.memory_system import MemorySystem
 
 
-@pytest.fixture(scope="session")
+# pytest-asyncio 1.x requires explicit asyncio_mode - we use auto via pyproject.toml
+# The session-scoped event_loop fixture is deprecated in newer pytest-asyncio;
+# each test gets its own loop in function scope mode.
+@pytest.fixture
 def event_loop():
     """Create an instance of the default event loop for each test case."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
+    loop = asyncio.new_event_loop()
     yield loop
     loop.close()
 

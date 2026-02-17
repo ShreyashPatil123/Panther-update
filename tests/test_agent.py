@@ -34,8 +34,9 @@ async def test_build_messages(agent_orchestrator):
     """Test message building."""
     message = "Test message"
     context = [{"role": "user", "content": "Previous message"}]
+    history: list = []  # empty history
 
-    messages = agent_orchestrator._build_messages(message, context)
+    messages = agent_orchestrator._build_messages(message, context, history)
 
     assert len(messages) >= 2
     assert messages[0]["role"] == "system"

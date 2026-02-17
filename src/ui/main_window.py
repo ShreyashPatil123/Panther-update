@@ -8,7 +8,6 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QMainWindow,
     QPushButton,
     QScrollArea,
@@ -67,11 +66,11 @@ class Sidebar(QWidget):
         nav_label.setStyleSheet("color: #888; font-size: 11px; padding: 8px;")
         layout.addWidget(nav_label)
 
-        self.chat_btn = self._create_nav_button("Chat", True)
-        self.files_btn = self._create_nav_button("Files", False)
-        self.browser_btn = self._create_nav_button("Browser", False)
-        self.memory_btn = self._create_nav_button("Memory", False)
-        self.tasks_btn = self._create_nav_button("Tasks", False)
+        self.chat_btn = self._create_nav_button("💬 Chat", True)
+        self.files_btn = self._create_nav_button("📁 Files", False)
+        self.browser_btn = self._create_nav_button("🌐 Browser", False)
+        self.memory_btn = self._create_nav_button("🧠 Memory", False)
+        self.tasks_btn = self._create_nav_button("📋 Tasks", False)
 
         layout.addWidget(self.chat_btn)
         layout.addWidget(self.files_btn)
@@ -86,11 +85,17 @@ class Sidebar(QWidget):
         layout.addWidget(separator2)
 
         # Settings button
-        self.settings_btn = self._create_nav_button("Settings", False)
+        self.settings_btn = self._create_nav_button("⚙ Settings", False)
         layout.addWidget(self.settings_btn)
 
         # Spacer
         layout.addStretch()
+
+        # Model indicator
+        self.model_label = QLabel("")
+        self.model_label.setStyleSheet("color: #666; font-size: 11px; padding: 4px 8px;")
+        self.model_label.setWordWrap(True)
+        layout.addWidget(self.model_label)
 
         # Status label
         self.status_label = QLabel("Ready")
@@ -113,16 +118,23 @@ class Sidebar(QWidget):
         color = "#ff5252" if is_error else "#76b900"
         self.status_label.setStyleSheet(f"color: {color}; font-size: 12px; padding: 8px;")
 
+    def set_model(self, model: str):
+        """Show current model name."""
+        short = model.split("/")[-1] if "/" in model else model
+        self.model_label.setText(f"Model: {short}")
+
 
 class ChatWidget(QWidget):
     """Chat interface widget."""
 
     message_sent = pyqtSignal(str)
+    voice_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._setup_ui()
         self._is_typing = False
+        self._current_ai_bubble: Optional[MessageBubble] = None
 
     def _setup_ui(self):
         """Setup chat UI."""
@@ -155,12 +167,21 @@ class ChatWidget(QWidget):
         input_frame.setObjectName("inputArea")
         input_layout = QHBoxLayout(input_frame)
         input_layout.setContentsMargins(20, 16, 20, 16)
-        input_layout.setSpacing(12)
+        input_layout.setSpacing(8)
+
+        # Voice button
+        self.voice_btn = QPushButton("🎤")
+        self.voice_btn.setObjectName("secondary")
+        self.voice_btn.setFixedSize(44, 40)
+        self.voice_btn.setToolTip("Hold to speak (push-to-talk)")
+        self.voice_btn.setCheckable(True)
+        self.voice_btn.clicked.connect(self._on_voice_clicked)
+        input_layout.addWidget(self.voice_btn)
 
         # Message input
         self.message_input = QTextEdit()
         self.message_input.setObjectName("messageInput")
-        self.message_input.setPlaceholderText("Type a message...")
+        self.message_input.setPlaceholderText("Type a message or click 🎤 to speak...")
         self.message_input.setMaximumHeight(120)
         self.message_input.setSizePolicy(
             QSizePolicy.Policy.Expanding,
@@ -176,6 +197,15 @@ class ChatWidget(QWidget):
         input_layout.addWidget(self.send_btn)
 
         layout.addWidget(input_frame)
+
+        # Voice recording indicator (hidden by default)
+        self.voice_indicator = QLabel("🔴 Recording... (click mic again to send)")
+        self.voice_indicator.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.voice_indicator.setStyleSheet(
+            "background: #3d1a1a; color: #ff5252; padding: 8px; font-size: 13px;"
+        )
+        self.voice_indicator.setVisible(False)
+        layout.addWidget(self.voice_indicator)
 
         # Typing indicator (hidden by default)
         self.typing_indicator = TypingIndicator()
@@ -196,15 +226,53 @@ class ChatWidget(QWidget):
             self.add_message(text, is_user=True)
             self.message_input.clear()
 
+    def _on_voice_clicked(self):
+        """Handle voice button click."""
+        self.voice_requested.emit()
+
+    def set_voice_recording(self, is_recording: bool):
+        """Update voice recording state in UI."""
+        self.voice_btn.setChecked(is_recording)
+        self.voice_indicator.setVisible(is_recording)
+        self.message_input.setEnabled(not is_recording)
+        self.send_btn.setEnabled(not is_recording)
+
+    def set_transcription(self, text: str):
+        """Set transcribed text in input field."""
+        self.message_input.setPlainText(text)
+        self.set_voice_recording(False)
+        self.message_input.setFocus()
+
     def add_message(self, text: str, is_user: bool = False):
-        """Add a message to the chat."""
+        """Add a new message bubble to the chat."""
         bubble = MessageBubble(text, is_user)
-        # Insert before stretch
         self.messages_layout.insertWidget(
             self.messages_layout.count() - 1,
             bubble,
         )
         self._scroll_to_bottom()
+        return bubble
+
+    def begin_ai_response(self) -> MessageBubble:
+        """Create a new AI response bubble and return it for streaming updates."""
+        bubble = MessageBubble("", is_user=False)
+        self._current_ai_bubble = bubble
+        self.messages_layout.insertWidget(
+            self.messages_layout.count() - 1,
+            bubble,
+        )
+        self._scroll_to_bottom()
+        return bubble
+
+    def update_ai_response(self, text: str):
+        """Update the current streaming AI response bubble."""
+        if self._current_ai_bubble is not None:
+            self._current_ai_bubble.set_text(text)
+            self._scroll_to_bottom()
+
+    def finish_ai_response(self):
+        """Finalize the current AI response bubble."""
+        self._current_ai_bubble = None
 
     def add_typing_indicator(self):
         """Show typing indicator."""
@@ -224,7 +292,7 @@ class ChatWidget(QWidget):
 
     def clear_chat(self):
         """Clear all messages."""
-        # Remove all widgets except stretch
+        self._current_ai_bubble = None
         while self.messages_layout.count() > 1:
             item = self.messages_layout.takeAt(0)
             if item.widget():
@@ -240,20 +308,8 @@ class ChatWidget(QWidget):
         """Enable/disable input."""
         self.message_input.setEnabled(enabled)
         self.send_btn.setEnabled(enabled)
-
-
-class PlaceholderWidget(QWidget):
-    """Placeholder widget for unimplemented features."""
-
-    def __init__(self, title: str, parent=None):
-        super().__init__(parent)
-        layout = QVBoxLayout(self)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        label = QLabel(f"{title}\n\nComing in Phase 2")
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label.setStyleSheet("font-size: 18px; color: #666;")
-        layout.addWidget(label)
+        if enabled:
+            self.voice_btn.setEnabled(True)
 
 
 class MainWindow(QMainWindow):
@@ -262,8 +318,11 @@ class MainWindow(QMainWindow):
     def __init__(self, orchestrator: AgentOrchestrator, parent=None):
         super().__init__(parent)
         self.orchestrator = orchestrator
+        self._is_recording = False
+        self._speech_interface = None  # Lazy-loaded
         self._setup_ui()
         self._connect_signals()
+        self._update_status()
 
         # Start with settings if no API key
         if not orchestrator.is_ready:
@@ -291,20 +350,42 @@ class MainWindow(QMainWindow):
         # Content area
         self.content_stack = QStackedWidget()
 
-        # Chat widget
+        # 0: Chat widget
         self.chat_widget = ChatWidget()
         self.content_stack.addWidget(self.chat_widget)
 
-        # Placeholder widgets
-        self.content_stack.addWidget(PlaceholderWidget("Files"))
-        self.content_stack.addWidget(PlaceholderWidget("Browser"))
-        self.content_stack.addWidget(PlaceholderWidget("Memory"))
-        self.content_stack.addWidget(PlaceholderWidget("Tasks"))
+        # 1: Files panel
+        from src.ui.files_panel import FilesPanel
+        self.files_panel = FilesPanel(
+            files_manager=self.orchestrator._files,  # may be None, set later
+        )
+        self.content_stack.addWidget(self.files_panel)
 
-        # Settings widget (placeholder, actual dialog)
-        self.content_stack.addWidget(PlaceholderWidget("Settings"))
+        # 2: Browser panel
+        from src.ui.browser_panel import BrowserPanel
+        self.browser_panel = BrowserPanel(
+            browser_controller=self.orchestrator._browser,  # may be None, set later
+        )
+        self.content_stack.addWidget(self.browser_panel)
+
+        # 3: Memory panel
+        from src.ui.memory_panel import MemoryPanel
+        self.memory_panel = MemoryPanel(
+            memory_system=self.orchestrator.memory,
+        )
+        self.content_stack.addWidget(self.memory_panel)
+
+        # 4: Tasks panel
+        from src.ui.tasks_panel import TasksPanel
+        self.tasks_panel = TasksPanel(
+            task_planner=self.orchestrator._task_planner,  # may be None, set later
+        )
+        self.content_stack.addWidget(self.tasks_panel)
 
         main_layout.addWidget(self.content_stack)
+
+        # Update model label
+        self.sidebar.set_model(self.orchestrator.config.default_model)
 
     def _connect_signals(self):
         """Connect UI signals."""
@@ -319,6 +400,7 @@ class MainWindow(QMainWindow):
 
         # Chat
         self.chat_widget.message_sent.connect(self._on_message_sent)
+        self.chat_widget.voice_requested.connect(self._on_voice_requested)
 
     def _switch_view(self, index: int):
         """Switch content view."""
@@ -335,16 +417,32 @@ class MainWindow(QMainWindow):
         for i, btn in enumerate(buttons):
             btn.setChecked(i == index)
 
+        # Refresh panels when switching to them
+        if index == 1:
+            # Files panel - update manager ref if it was lazy-loaded
+            if self.orchestrator._files:
+                self.files_panel.set_files_manager(self.orchestrator._files)
+        elif index == 2:
+            # Browser panel - update controller ref
+            if self.orchestrator._browser:
+                self.browser_panel.set_browser_controller(self.orchestrator._browser)
+        elif index == 3:
+            # Memory panel - refresh sessions
+            self.memory_panel._load_sessions()
+        elif index == 4:
+            # Tasks panel - update planner ref
+            if self.orchestrator._task_planner:
+                self.tasks_panel.set_task_planner(self.orchestrator._task_planner)
+
     def _show_settings(self):
         """Show settings dialog."""
         dialog = SettingsDialog(self.orchestrator, self)
         if dialog.exec():
-            # Refresh if settings changed
             self._update_status()
+            self.sidebar.set_model(self.orchestrator.config.default_model)
 
     def _new_chat(self):
         """Start a new chat session."""
-        # Create new session
         asyncio.create_task(self._create_new_session())
 
     async def _create_new_session(self):
@@ -357,7 +455,7 @@ class MainWindow(QMainWindow):
     def _update_status(self):
         """Update sidebar status."""
         if self.orchestrator.is_ready:
-            self.sidebar.set_status("Connected")
+            self.sidebar.set_status("● Connected")
         else:
             self.sidebar.set_status("API Key Required", is_error=True)
 
@@ -370,41 +468,110 @@ class MainWindow(QMainWindow):
             )
             return
 
-        # Start processing
+        # Disable input during processing
         self.chat_widget.set_enabled(False)
         self.chat_widget.add_typing_indicator()
+        self.sidebar.set_status("● Processing...")
 
         # Process message asynchronously
         asyncio.create_task(self._process_message(message))
 
     async def _process_message(self, message: str):
-        """Process message with agent."""
+        """Process message with agent using proper streaming (single bubble)."""
         response_text = ""
+        ai_bubble: Optional[MessageBubble] = None
+
         try:
             async for chunk in self.orchestrator.process_message(message):
                 response_text += chunk
-                # Update UI with streaming response
-                await self._update_response(response_text)
+
+                if ai_bubble is None:
+                    # Remove typing indicator and create AI bubble on first chunk
+                    self.chat_widget.remove_typing_indicator()
+                    ai_bubble = self.chat_widget.begin_ai_response()
+
+                # Update the same bubble with accumulated text
+                self.chat_widget.update_ai_response(response_text)
+
+                # Yield control to event loop for UI updates
+                await asyncio.sleep(0)
+
         except Exception as e:
             logger.error(f"Error processing message: {e}")
-            response_text = f"Error: {str(e)}"
-            await self._update_response(response_text, is_error=True)
+            if ai_bubble is None:
+                self.chat_widget.remove_typing_indicator()
+                ai_bubble = self.chat_widget.begin_ai_response()
+            self.chat_widget.update_ai_response(f"❌ Error: {str(e)}")
+
         finally:
-            self.chat_widget.remove_typing_indicator()
+            if ai_bubble is None:
+                # No response at all — remove typing indicator
+                self.chat_widget.remove_typing_indicator()
+                self.chat_widget.add_message("No response received.", is_user=False)
+
+            self.chat_widget.finish_ai_response()
             self.chat_widget.set_enabled(True)
+            self._update_status()
 
-    async def _update_response(self, text: str, is_error: bool = False):
-        """Update response in UI."""
-        # Remove typing indicator temporarily
-        self.chat_widget.remove_typing_indicator()
+    def _on_voice_requested(self):
+        """Handle voice mic button click."""
+        if self._is_recording:
+            # Stop recording
+            self._is_recording = False
+            self.chat_widget.set_voice_recording(False)
+        else:
+            # Start recording
+            self._is_recording = True
+            self.chat_widget.set_voice_recording(True)
+            asyncio.create_task(self._record_and_transcribe())
 
-        # Add/update message
-        # For simplicity, we add a new message each time (streaming simulation)
-        # In production, you'd update the existing message bubble
-        self.chat_widget.add_message(text, is_user=False)
+    async def _record_and_transcribe(self):
+        """Record audio and transcribe to text."""
+        try:
+            # Lazy-load speech interface
+            if self._speech_interface is None:
+                self.sidebar.set_status("Loading speech model...")
+                try:
+                    from src.capabilities.speech import SpeechInterface
+                    self._speech_interface = SpeechInterface()
+                    logger.info("SpeechInterface loaded")
+                except ImportError as e:
+                    logger.error(f"Speech not available: {e}")
+                    self.chat_widget.set_transcription("")
+                    self.chat_widget.add_message(
+                        "Speech requires faster-whisper and piper-tts to be installed.",
+                        is_user=False,
+                    )
+                    self._is_recording = False
+                    return
+
+            self.sidebar.set_status("● Recording...")
+
+            # Record audio (5 seconds with VAD)
+            text = await self._speech_interface.listen_and_transcribe(duration=5)
+
+            if text:
+                self.chat_widget.set_transcription(text)
+                logger.info(f"Transcribed: {text}")
+            else:
+                self.chat_widget.set_voice_recording(False)
+                self.chat_widget.add_message(
+                    "No speech detected. Please try again.",
+                    is_user=False,
+                )
+
+        except Exception as e:
+            logger.error(f"Voice recording error: {e}")
+            self.chat_widget.set_voice_recording(False)
+            self.chat_widget.add_message(
+                f"Voice recording error: {e}",
+                is_user=False,
+            )
+        finally:
+            self._is_recording = False
+            self._update_status()
 
     def closeEvent(self, event):
         """Handle window close."""
-        # Cleanup
         asyncio.create_task(self.orchestrator.close())
         event.accept()

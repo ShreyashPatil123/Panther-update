@@ -7,10 +7,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import chromadb
-from chromadb.config import Settings as ChromaSettings
-from chromadb.utils import embedding_functions
 from loguru import logger
+
+# ChromaDB is optional — may not work on all Python versions
+try:
+    import chromadb
+    from chromadb.config import Settings as ChromaSettings
+    from chromadb.utils import embedding_functions
+    _CHROMA_AVAILABLE = True
+except Exception as _chroma_err:
+    logger.warning(f"ChromaDB unavailable (semantic search disabled): {_chroma_err}")
+    chromadb = None  # type: ignore
+    _CHROMA_AVAILABLE = False
 
 
 class MemorySystem:
@@ -33,8 +41,9 @@ class MemorySystem:
         self.chroma_path.mkdir(parents=True, exist_ok=True)
 
         self.conn: Optional[sqlite3.Connection] = None
-        self.chroma_client: Optional[chromadb.Client] = None
+        self.chroma_client = None
         self.collection = None
+        self._semantic_search_available = False
 
         self._lock = asyncio.Lock()
 
@@ -48,25 +57,34 @@ class MemorySystem:
             self.conn.row_factory = sqlite3.Row
             self._create_tables()
 
-            # Initialize ChromaDB
-            self.chroma_client = chromadb.PersistentClient(
-                path=str(self.chroma_path),
-                settings=ChromaSettings(
-                    anonymized_telemetry=False,
-                    allow_reset=True,
-                ),
-            )
+            # Initialize ChromaDB (optional)
+            if _CHROMA_AVAILABLE:
+                try:
+                    self.chroma_client = chromadb.PersistentClient(
+                        path=str(self.chroma_path),
+                        settings=ChromaSettings(
+                            anonymized_telemetry=False,
+                            allow_reset=True,
+                        ),
+                    )
 
-            # Use sentence transformers for embeddings
-            embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-                model_name="all-MiniLM-L6-v2"
-            )
+                    # Use sentence transformers for embeddings
+                    embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+                        model_name="all-MiniLM-L6-v2"
+                    )
 
-            self.collection = self.chroma_client.get_or_create_collection(
-                name="conversations",
-                embedding_function=embedding_fn,
-                metadata={"description": "Conversation memory storage"},
-            )
+                    self.collection = self.chroma_client.get_or_create_collection(
+                        name="conversations",
+                        embedding_function=embedding_fn,
+                        metadata={"description": "Conversation memory storage"},
+                    )
+                    self._semantic_search_available = True
+                    logger.info("ChromaDB semantic search initialized")
+                except Exception as e:
+                    logger.warning(f"ChromaDB init failed (falling back to keyword search): {e}")
+                    self._semantic_search_available = False
+            else:
+                logger.info("ChromaDB unavailable — using keyword-based context retrieval")
 
         logger.info("Memory system initialized successfully")
 
@@ -160,20 +178,24 @@ class MemorySystem:
             )
             self.conn.commit()
 
-            # Add to vector store for semantic search
+            # Add to vector store for semantic search (if available)
             message_id = cursor.lastrowid
-            self.collection.add(
-                documents=[content],
-                metadatas=[
-                    {
-                        "role": role,
-                        "session_id": session_id,
-                        "timestamp": datetime.now().isoformat(),
-                        "db_id": str(message_id),
-                    }
-                ],
-                ids=[f"msg_{message_id}_{uuid.uuid4().hex[:8]}"],
-            )
+            if self._semantic_search_available and self.collection is not None:
+                try:
+                    self.collection.add(
+                        documents=[content],
+                        metadatas=[
+                            {
+                                "role": role,
+                                "session_id": session_id,
+                                "timestamp": datetime.now().isoformat(),
+                                "db_id": str(message_id),
+                            }
+                        ],
+                        ids=[f"msg_{message_id}_{uuid.uuid4().hex[:8]}"],
+                    )
+                except Exception as e:
+                    logger.debug(f"ChromaDB add failed (non-critical): {e}")
 
             # Update session timestamp
             cursor.execute(
@@ -190,7 +212,7 @@ class MemorySystem:
     async def get_relevant_context(
         self, query: str, limit: int = 5, session_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """Retrieve relevant context using semantic search.
+        """Retrieve relevant context using semantic search (or keyword fallback).
 
         Args:
             query: Search query
@@ -200,31 +222,75 @@ class MemorySystem:
         Returns:
             List of relevant messages
         """
-        try:
-            where_filter = {"session_id": session_id} if session_id else None
-
-            results = self.collection.query(
-                query_texts=[query],
-                n_results=limit,
-                where=where_filter,
-            )
-
-            contexts = []
-            if results and results["documents"] and results["documents"][0]:
-                for i, doc in enumerate(results["documents"][0]):
-                    meta = results["metadatas"][0][i] if results["metadatas"] else {}
-                    contexts.append(
-                        {
+        # Try semantic search first
+        if self._semantic_search_available and self.collection is not None:
+            try:
+                where_filter = {"session_id": session_id} if session_id else None
+                results = self.collection.query(
+                    query_texts=[query],
+                    n_results=limit,
+                    where=where_filter,
+                )
+                contexts = []
+                if results and results["documents"] and results["documents"][0]:
+                    for i, doc in enumerate(results["documents"][0]):
+                        meta = results["metadatas"][0][i] if results["metadatas"] else {}
+                        contexts.append({
                             "content": doc,
                             "role": meta.get("role", "unknown"),
                             "timestamp": meta.get("timestamp"),
-                        }
-                    )
+                        })
+                return contexts
+            except Exception as e:
+                logger.debug(f"Semantic search failed, using keyword fallback: {e}")
 
-            return contexts
-        except Exception as e:
-            logger.error(f"Error retrieving context: {e}")
-            return []
+        # Keyword fallback: search by simple LIKE query
+        return await self._keyword_context_search(query, limit, session_id)
+
+    async def _keyword_context_search(
+        self, query: str, limit: int, session_id: Optional[str]
+    ) -> List[Dict[str, Any]]:
+        """Simple keyword-based context retrieval from SQLite."""
+        async with self._lock:
+            cursor = self.conn.cursor()
+            # Use FTS-style LIKE search
+            words = query.split()[:5]  # Use first 5 words
+            if not words:
+                return []
+
+            # Build LIKE condition for each word
+            conditions = " OR ".join(["content LIKE ?" for _ in words])
+            params = [f"%{w}%" for w in words]
+
+            if session_id:
+                query_sql = f"""
+                    SELECT role, content, timestamp FROM conversations
+                    WHERE session_id = ? AND ({conditions})
+                    ORDER BY timestamp DESC LIMIT ?
+                """
+                params = [session_id] + params + [limit]
+            else:
+                query_sql = f"""
+                    SELECT role, content, timestamp FROM conversations
+                    WHERE {conditions}
+                    ORDER BY timestamp DESC LIMIT ?
+                """
+                params = params + [limit]
+
+            try:
+                cursor.execute(query_sql, params)
+                rows = cursor.fetchall()
+                return [
+                    {
+                        "content": row["content"],
+                        "role": row["role"],
+                        "timestamp": row["timestamp"],
+                    }
+                    for row in rows
+                ]
+            except Exception as e:
+                logger.error(f"Keyword search failed: {e}")
+                return []
 
     async def get_recent_messages(
         self,
@@ -298,20 +364,24 @@ class MemorySystem:
             )
             self.conn.commit()
 
-            # Add to vector store
+            # Add to vector store (if available)
             memory_id = cursor.lastrowid
-            self.collection.add(
-                documents=[content],
-                metadatas=[
-                    {
-                        "type": memory_type,
-                        "importance": importance,
-                        "timestamp": datetime.now().isoformat(),
-                        "db_id": str(memory_id),
-                    }
-                ],
-                ids=[f"mem_{memory_id}_{uuid.uuid4().hex[:8]}"],
-            )
+            if self._semantic_search_available and self.collection is not None:
+                try:
+                    self.collection.add(
+                        documents=[content],
+                        metadatas=[
+                            {
+                                "type": memory_type,
+                                "importance": importance,
+                                "timestamp": datetime.now().isoformat(),
+                                "db_id": str(memory_id),
+                            }
+                        ],
+                        ids=[f"mem_{memory_id}_{uuid.uuid4().hex[:8]}"],
+                    )
+                except Exception as e:
+                    logger.debug(f"ChromaDB memory add failed (non-critical): {e}")
 
         logger.info(f"Stored {memory_type} memory: {content[:50]}...")
 
@@ -435,11 +505,12 @@ class MemorySystem:
             )
             self.conn.commit()
 
-            # Also delete from ChromaDB
-            try:
-                self.collection.delete(where={"session_id": session_id})
-            except Exception as e:
-                logger.warning(f"Failed to delete from ChromaDB: {e}")
+            # Also delete from ChromaDB (if available)
+            if self._semantic_search_available and self.collection is not None:
+                try:
+                    self.collection.delete(where={"session_id": session_id})
+                except Exception as e:
+                    logger.debug(f"ChromaDB delete failed (non-critical): {e}")
 
         logger.info(f"Cleared session: {session_id}")
 
@@ -461,11 +532,12 @@ class MemorySystem:
             )
             self.conn.commit()
 
-            # Delete from ChromaDB
-            try:
-                self.collection.delete(where={"session_id": session_id})
-            except Exception as e:
-                logger.warning(f"Failed to delete from ChromaDB: {e}")
+            # Delete from ChromaDB (if available)
+            if self._semantic_search_available and self.collection is not None:
+                try:
+                    self.collection.delete(where={"session_id": session_id})
+                except Exception as e:
+                    logger.debug(f"ChromaDB delete failed (non-critical): {e}")
 
         logger.info(f"Deleted session: {session_id}")
 
@@ -551,7 +623,7 @@ class MemorySystem:
         return history
 
     async def search_memory(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """Search all memory (conversations and memories) by semantic similarity.
+        """Search all memory (conversations and memories) by semantic similarity or keyword.
 
         Args:
             query: Search query
@@ -560,30 +632,29 @@ class MemorySystem:
         Returns:
             List of matching memories
         """
-        try:
-            results = self.collection.query(
-                query_texts=[query],
-                n_results=limit,
-            )
+        # Try semantic search first
+        if self._semantic_search_available and self.collection is not None:
+            try:
+                results = self.collection.query(
+                    query_texts=[query],
+                    n_results=limit,
+                )
 
-            matches = []
-            if results and results["documents"] and results["documents"][0]:
-                for i, doc in enumerate(results["documents"][0]):
-                    meta = results["metadatas"][0][i] if results["metadatas"] else {}
-                    matches.append(
-                        {
+                matches = []
+                if results and results["documents"] and results["documents"][0]:
+                    for i, doc in enumerate(results["documents"][0]):
+                        meta = results["metadatas"][0][i] if results["metadatas"] else {}
+                        matches.append({
                             "content": doc,
+                            "role": meta.get("role", "unknown"),
                             "metadata": meta,
-                            "distance": results["distances"][0][i]
-                            if results.get("distances")
-                            else None,
-                        }
-                    )
+                        })
+                return matches
+            except Exception as e:
+                logger.debug(f"Semantic search failed: {e}")
 
-            return matches
-        except Exception as e:
-            logger.error(f"Error searching memory: {e}")
-            return []
+        # Keyword fallback
+        return await self._keyword_context_search(query, limit, session_id=None)
 
     async def close(self):
         """Close database connections."""

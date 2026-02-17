@@ -39,7 +39,11 @@ class Settings(BaseSettings):
     # UI Settings
     window_width: int = 1400
     window_height: int = 900
-    sidebar_width: 250
+    sidebar_width: int = 250
+
+    # Feature flags
+    speech_enabled: bool = True
+    max_retries: int = 3
 
 
 def load_config():

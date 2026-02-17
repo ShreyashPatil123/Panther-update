@@ -1,8 +1,14 @@
 """NVIDIA NIM API Client for chat completions."""
+import asyncio
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 import httpx
 from loguru import logger
+
+# Status codes that warrant an automatic retry
+_RETRYABLE_CODES = {429, 503, 502, 504}
+# Status codes that should never be retried
+_NO_RETRY_CODES = {401, 403, 400, 404}
 
 
 class NVIDIAClient:
@@ -13,6 +19,7 @@ class NVIDIAClient:
         api_key: str,
         base_url: str = "https://integrate.api.nvidia.com/v1",
         timeout: float = 300.0,
+        max_retries: int = 3,
     ):
         """Initialize NVIDIA API client.
 
@@ -20,10 +27,12 @@ class NVIDIAClient:
             api_key: NVIDIA API key
             base_url: API base URL
             timeout: Request timeout in seconds
+            max_retries: Maximum retry attempts for transient errors
         """
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.max_retries = max_retries
 
         self.client = httpx.AsyncClient(
             timeout=timeout,
@@ -69,53 +78,108 @@ class NVIDIAClient:
 
         logger.debug(f"Sending request to {model} (stream={stream})")
 
-        try:
-            if stream:
-                async with self.client.stream(
-                    "POST",
-                    f"{self.base_url}/chat/completions",
-                    json=payload,
-                ) as response:
+        last_error: Optional[Exception] = None
+        for attempt in range(self.max_retries):
+            try:
+                if stream:
+                    async with self.client.stream(
+                        "POST",
+                        f"{self.base_url}/chat/completions",
+                        json=payload,
+                    ) as response:
+                        if response.status_code in _NO_RETRY_CODES:
+                            response.raise_for_status()
+                        if response.status_code in _RETRYABLE_CODES:
+                            wait = 2 ** attempt
+                            logger.warning(
+                                f"Retryable HTTP {response.status_code}, "
+                                f"attempt {attempt + 1}/{self.max_retries}, "
+                                f"waiting {wait}s"
+                            )
+                            await asyncio.sleep(wait)
+                            last_error = httpx.HTTPStatusError(
+                                f"HTTP {response.status_code}",
+                                request=response.request,
+                                response=response,
+                            )
+                            continue
+                        response.raise_for_status()
+
+                        async for line in response.aiter_lines():
+                            if line.startswith("data: "):
+                                data = line[6:]
+                                if data.strip() == "[DONE]":
+                                    break
+
+                                try:
+                                    import json
+
+                                    chunk = json.loads(data)
+                                    if "choices" in chunk and len(chunk["choices"]) > 0:
+                                        delta = chunk["choices"][0].get("delta", {})
+                                        if "content" in delta:
+                                            yield delta["content"]
+                                except json.JSONDecodeError:
+                                    logger.warning(f"Failed to parse JSON: {data}")
+                                    continue
+                    return  # success
+
+                else:
+                    response = await self.client.post(
+                        f"{self.base_url}/chat/completions",
+                        json=payload,
+                    )
+                    if response.status_code in _NO_RETRY_CODES:
+                        response.raise_for_status()
+                    if response.status_code in _RETRYABLE_CODES:
+                        wait = 2 ** attempt
+                        logger.warning(
+                            f"Retryable HTTP {response.status_code}, "
+                            f"attempt {attempt + 1}/{self.max_retries}, "
+                            f"waiting {wait}s"
+                        )
+                        await asyncio.sleep(wait)
+                        last_error = httpx.HTTPStatusError(
+                            f"HTTP {response.status_code}",
+                            request=response.request,
+                            response=response,
+                        )
+                        continue
                     response.raise_for_status()
+                    data = response.json()
 
-                    async for line in response.aiter_lines():
-                        if line.startswith("data: "):
-                            data = line[6:]
-                            if data.strip() == "[DONE]":
-                                break
+                    if "choices" in data and len(data["choices"]) > 0:
+                        content = data["choices"][0]["message"].get("content", "")
+                        yield content
+                    return  # success
 
-                            try:
-                                import json
-
-                                chunk = json.loads(data)
-                                if "choices" in chunk and len(chunk["choices"]) > 0:
-                                    delta = chunk["choices"][0].get("delta", {})
-                                    if "content" in delta:
-                                        yield delta["content"]
-                            except json.JSONDecodeError:
-                                logger.warning(f"Failed to parse JSON: {data}")
-                                continue
-            else:
-                response = await self.client.post(
-                    f"{self.base_url}/chat/completions",
-                    json=payload,
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code in _NO_RETRY_CODES:
+                    logger.error(f"HTTP error {e.response.status_code}: {e.response.text}")
+                    raise
+                last_error = e
+                wait = 2 ** attempt
+                logger.warning(
+                    f"HTTP {e.response.status_code} on attempt {attempt + 1}/{self.max_retries}, "
+                    f"retrying in {wait}s"
                 )
-                response.raise_for_status()
-                data = response.json()
+                await asyncio.sleep(wait)
+            except httpx.RequestError as e:
+                last_error = e
+                wait = 2 ** attempt
+                logger.warning(
+                    f"Request error on attempt {attempt + 1}/{self.max_retries}: {e}, "
+                    f"retrying in {wait}s"
+                )
+                await asyncio.sleep(wait)
+            except Exception as e:
+                logger.error(f"Unexpected error in chat completion: {e}")
+                raise
 
-                if "choices" in data and len(data["choices"]) > 0:
-                    content = data["choices"][0]["message"].get("content", "")
-                    yield content
-
-        except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error {e.response.status_code}: {e.response.text}")
-            raise
-        except httpx.RequestError as e:
-            logger.error(f"Request error: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error in chat completion: {e}")
-            raise
+        # All retries exhausted
+        if last_error:
+            logger.error(f"All {self.max_retries} attempts failed. Last error: {last_error}")
+            raise last_error
 
     async def validate_api_key(self) -> bool:
         """Test if API key is valid.
