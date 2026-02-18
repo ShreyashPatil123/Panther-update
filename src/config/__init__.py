@@ -21,7 +21,7 @@ class Settings(BaseSettings):
         default="https://integrate.api.nvidia.com/v1",
         alias="NVIDIA_BASE_URL",
     )
-    default_model: str = Field(default="nvidia/kimi-k-2.5", alias="DEFAULT_MODEL")
+    default_model: str = Field(default="meta/llama-3.1-8b-instruct", alias="DEFAULT_MODEL")
 
     # Application Settings
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")

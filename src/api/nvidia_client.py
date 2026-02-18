@@ -48,7 +48,7 @@ class NVIDIAClient:
     async def chat_completion(
         self,
         messages: List[Dict[str, str]],
-        model: str = "nvidia/kimi-k-2.5",
+        model: str = "meta/llama-3.1-8b-instruct",
         stream: bool = True,
         temperature: float = 0.7,
         max_tokens: int = 4096,
@@ -207,6 +207,58 @@ class NVIDIAClient:
             logger.error(f"Validation error: {e}")
             return False
 
+    async def check_health(self) -> Dict[str, Any]:
+        """Check API connectivity and key validity.
+
+        Returns:
+            Dict with 'ok' (bool), 'latency_ms' (float), 'error' (str or None)
+        """
+        import time
+
+        start = time.monotonic()
+        try:
+            response = await self.client.get(f"{self.base_url}/models")
+            latency = (time.monotonic() - start) * 1000
+            if response.status_code == 200:
+                data = response.json()
+                model_count = len(data.get("data", []))
+                return {
+                    "ok": True,
+                    "latency_ms": round(latency, 1),
+                    "model_count": model_count,
+                    "error": None,
+                }
+            elif response.status_code == 401:
+                return {
+                    "ok": False,
+                    "latency_ms": round(latency, 1),
+                    "model_count": 0,
+                    "error": "Invalid API key (401 Unauthorized)",
+                }
+            else:
+                return {
+                    "ok": False,
+                    "latency_ms": round(latency, 1),
+                    "model_count": 0,
+                    "error": f"HTTP {response.status_code}",
+                }
+        except httpx.ConnectError:
+            latency = (time.monotonic() - start) * 1000
+            return {
+                "ok": False,
+                "latency_ms": round(latency, 1),
+                "model_count": 0,
+                "error": "Connection failed — check internet or base URL",
+            }
+        except Exception as e:
+            latency = (time.monotonic() - start) * 1000
+            return {
+                "ok": False,
+                "latency_ms": round(latency, 1),
+                "model_count": 0,
+                "error": str(e),
+            }
+
     async def list_models(self) -> List[Dict[str, Any]]:
         """Fetch available models from NVIDIA API.
 
@@ -223,19 +275,20 @@ class NVIDIAClient:
             return []
 
     def get_available_models(self) -> List[str]:
-        """Get list of commonly available NVIDIA models.
+        """Get list of commonly available NVIDIA NIM models.
 
         Returns:
             List of model identifiers
         """
         return [
-            "nvidia/kimi-k-2.5",
-            "nvidia/kimi-k-2",
-            "nvidia/llama-3.1-405b-instruct",
-            "nvidia/llama-3.1-70b-instruct",
-            "nvidia/llama-3.1-8b-instruct",
-            "nvidia/mistral-large",
-            "nvidia/codellama-70b",
+            "meta/llama-3.1-8b-instruct",
+            "meta/llama-3.1-70b-instruct",
+            "meta/llama-3.1-405b-instruct",
+            "meta/llama-3.3-70b-instruct",
+            "mistralai/mistral-large-2-instruct",
+            "mistralai/mistral-7b-instruct-v0.3",
+            "google/gemma-2-27b-it",
+            "nvidia/nemotron-4-340b-instruct",
         ]
 
     async def close(self):

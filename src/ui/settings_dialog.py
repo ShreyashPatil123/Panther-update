@@ -125,11 +125,14 @@ class SettingsDialog(QDialog):
         self.model_combo = QComboBox()
         self.model_combo.setEditable(True)
         self.model_combo.addItems([
-            "nvidia/kimi-k-2.5",
-            "nvidia/kimi-k-2",
-            "nvidia/llama-3.1-405b-instruct",
-            "nvidia/llama-3.1-70b-instruct",
-            "nvidia/llama-3.1-8b-instruct",
+            "meta/llama-3.1-8b-instruct",
+            "meta/llama-3.1-70b-instruct",
+            "meta/llama-3.1-405b-instruct",
+            "meta/llama-3.3-70b-instruct",
+            "mistralai/mistral-large-2-instruct",
+            "mistralai/mistral-7b-instruct-v0.3",
+            "google/gemma-2-27b-it",
+            "nvidia/nemotron-4-340b-instruct",
         ])
         layout.addRow("Model:", self.model_combo)
 
@@ -253,27 +256,48 @@ class SettingsDialog(QDialog):
         asyncio.create_task(self._do_test_connection(api_key))
 
     async def _do_test_connection(self, api_key: str):
-        """Perform connection test."""
-        try:
-            is_valid = await self.orchestrator.validate_api_key(api_key)
+        """Perform connection test using health check."""
+        from src.api.nvidia_client import NVIDIAClient
 
-            if is_valid:
-                self.status_label.setText("Connected")
+        base_url = self.base_url_input.text().strip() or "https://integrate.api.nvidia.com/v1"
+        client = NVIDIAClient(api_key=api_key, base_url=base_url)
+        try:
+            health = await client.check_health()
+
+            if health["ok"]:
+                latency = health["latency_ms"]
+                models = health["model_count"]
+                self.status_label.setText(
+                    f"Connected ({latency:.0f}ms, {models} models)"
+                )
                 self.status_label.setStyleSheet("color: #4caf50;")
                 QMessageBox.information(
-                    self, "Success", "API key is valid and connection successful!"
+                    self,
+                    "Success",
+                    f"API connection successful!\n\n"
+                    f"Latency: {latency:.0f}ms\n"
+                    f"Available models: {models}",
                 )
             else:
-                self.status_label.setText("Invalid API Key")
+                error = health.get("error", "Unknown error")
+                self.status_label.setText(f"Failed: {error[:40]}")
                 self.status_label.setStyleSheet("color: #ff5252;")
                 QMessageBox.critical(
-                    self, "Error", "API key is invalid. Please check your key."
+                    self,
+                    "Connection Failed",
+                    f"Could not connect to NVIDIA NIM API.\n\n"
+                    f"Error: {error}\n\n"
+                    f"Please verify:\n"
+                    f"• Your API key is correct\n"
+                    f"• The base URL is correct\n"
+                    f"• You have internet connectivity",
                 )
         except Exception as e:
             self.status_label.setText(f"Error: {str(e)[:50]}")
             self.status_label.setStyleSheet("color: #ff5252;")
             QMessageBox.critical(self, "Error", f"Connection failed: {str(e)}")
         finally:
+            await client.close()
             self.test_btn.setEnabled(True)
             self.test_btn.setText("Test Connection")
 
@@ -309,6 +333,16 @@ class SettingsDialog(QDialog):
         if api_key:
             SecureStorage.store_api_key(api_key)
             self.orchestrator.set_api_key(api_key)
+
+        # Save base URL
+        base_url = self.base_url_input.text().strip()
+        if base_url:
+            self.orchestrator.config.nvidia_base_url = base_url
+
+        # Save model selection
+        model = self.model_combo.currentText().strip()
+        if model:
+            self.orchestrator.config.default_model = model
 
         # Update status
         if self.orchestrator.is_ready:

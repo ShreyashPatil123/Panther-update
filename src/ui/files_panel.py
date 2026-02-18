@@ -21,6 +21,8 @@ from PyQt6.QtWidgets import (
 )
 from loguru import logger
 
+from src.capabilities.files import PermissionType
+
 
 class FilesPanel(QWidget):
     """File system browser with permission management."""
@@ -131,12 +133,19 @@ class FilesPanel(QWidget):
                 self.paths_list.addItem(item)
             return
 
-        for path_info in self.files_manager.get_allowed_paths():
-            path = path_info.get("path", "")
-            perm = path_info.get("permission", "R")
-            item = QListWidgetItem(f"📁 {path}  [{perm}]")
-            item.setData(Qt.ItemDataRole.UserRole, path)
-            self.paths_list.addItem(item)
+        asyncio.create_task(self._async_refresh_allowed_paths())
+
+    async def _async_refresh_allowed_paths(self):
+        """Load allowed paths asynchronously."""
+        try:
+            paths = await self.files_manager.get_allowed_paths()
+            self.paths_list.clear()
+            for p in paths:
+                item = QListWidgetItem(f"📁 {p}  [RW]")
+                item.setData(Qt.ItemDataRole.UserRole, str(p))
+                self.paths_list.addItem(item)
+        except Exception as e:
+            logger.error(f"Failed to refresh paths: {e}")
 
     def _add_folder(self):
         """Open folder dialog to add a new permitted path."""
@@ -146,7 +155,9 @@ class FilesPanel(QWidget):
             str(Path.home()),
         )
         if path and self.files_manager:
-            self.files_manager.request_permission(path, "read", recursive=True)
+            asyncio.create_task(self.files_manager.request_permission(
+                path, PermissionType.READ, recursive=True
+            ))
             self._refresh_allowed_paths()
             logger.info(f"Added folder permission: {path}")
         elif path:
@@ -161,7 +172,9 @@ class FilesPanel(QWidget):
             return
         path = current.data(Qt.ItemDataRole.UserRole)
         if path and self.files_manager:
-            self.files_manager.revoke_permission(path, "read")
+            asyncio.create_task(self.files_manager.revoke_permission(
+                path, PermissionType.READ
+            ))
             self._refresh_allowed_paths()
 
     def _on_path_selected(self, row: int):

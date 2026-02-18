@@ -2,6 +2,8 @@
 import asyncio
 from typing import Optional
 
+import httpx
+
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot
 from PyQt6.QtWidgets import (
     QApplication,
@@ -482,6 +484,8 @@ class MainWindow(QMainWindow):
         ai_bubble: Optional[MessageBubble] = None
 
         try:
+            self.sidebar.set_status("● Waiting for API...")
+
             async for chunk in self.orchestrator.process_message(message):
                 response_text += chunk
 
@@ -489,6 +493,7 @@ class MainWindow(QMainWindow):
                     # Remove typing indicator and create AI bubble on first chunk
                     self.chat_widget.remove_typing_indicator()
                     ai_bubble = self.chat_widget.begin_ai_response()
+                    self.sidebar.set_status("● Streaming response...")
 
                 # Update the same bubble with accumulated text
                 self.chat_widget.update_ai_response(response_text)
@@ -496,12 +501,41 @@ class MainWindow(QMainWindow):
                 # Yield control to event loop for UI updates
                 await asyncio.sleep(0)
 
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error processing message: {e}")
+            if ai_bubble is None:
+                self.chat_widget.remove_typing_indicator()
+                ai_bubble = self.chat_widget.begin_ai_response()
+            status_code = e.response.status_code
+            if status_code == 401:
+                error_msg = "Invalid API key. Please update it in Settings."
+            elif status_code == 429:
+                error_msg = "Rate limited by NVIDIA API. Please wait a moment and try again."
+            elif status_code == 404:
+                error_msg = (
+                    f"Model not found. The model '{self.orchestrator.config.default_model}' "
+                    "may not be available. Try changing the model in Settings."
+                )
+            else:
+                error_msg = f"API error (HTTP {status_code}): {e}"
+            self.chat_widget.update_ai_response(f"Error: {error_msg}")
+
+        except httpx.ConnectError:
+            logger.error("Connection error processing message")
+            if ai_bubble is None:
+                self.chat_widget.remove_typing_indicator()
+                ai_bubble = self.chat_widget.begin_ai_response()
+            self.chat_widget.update_ai_response(
+                "Connection failed. Please check your internet connection "
+                "and the API base URL in Settings."
+            )
+
         except Exception as e:
             logger.error(f"Error processing message: {e}")
             if ai_bubble is None:
                 self.chat_widget.remove_typing_indicator()
                 ai_bubble = self.chat_widget.begin_ai_response()
-            self.chat_widget.update_ai_response(f"❌ Error: {str(e)}")
+            self.chat_widget.update_ai_response(f"Error: {str(e)}")
 
         finally:
             if ai_bubble is None:

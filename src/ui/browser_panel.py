@@ -132,7 +132,7 @@ class BrowserPanel(QWidget):
         if not self.browser_controller:
             return
 
-        pages = getattr(self.browser_controller, "pages", {})
+        pages = getattr(self.browser_controller, "_pages", {})
         if pages:
             self.status_label.setText(f"● Active ({len(pages)} tab{'s' if len(pages) > 1 else ''})")
             self.status_label.setStyleSheet("color: #00d4aa; font-size: 13px;")
@@ -168,7 +168,7 @@ class BrowserPanel(QWidget):
         if not self.browser_controller:
             return
         try:
-            screenshot_bytes = await self.browser_controller.screenshot(page_id)
+            screenshot_bytes = await self.browser_controller.take_screenshot(page_id=page_id)
             pixmap = QPixmap()
             pixmap.loadFromData(screenshot_bytes)
             if not pixmap.isNull():
@@ -181,7 +181,7 @@ class BrowserPanel(QWidget):
                 self.screenshot_widget.setPixmap(scaled)
 
             # Load page text
-            text = await self.browser_controller.get_text("body", page_id)
+            text = await self.browser_controller.get_text("body", page_id=page_id)
             self.page_text.setPlainText(text[:1000] if text else "")
         except Exception as e:
             logger.debug(f"Screenshot error for {page_id}: {e}")

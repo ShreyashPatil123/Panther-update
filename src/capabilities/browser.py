@@ -1,7 +1,8 @@
 """Browser automation with Playwright."""
+import asyncio
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 from loguru import logger
@@ -525,6 +526,3 @@ class BrowserController:
 
         self._pages.clear()
         logger.info("Browser controller shut down")
-
-
-import asyncio

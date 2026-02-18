@@ -2,7 +2,7 @@
 import asyncio
 from typing import Optional
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -104,8 +104,8 @@ class MemoryPanel(QWidget):
         splitter.setSizes([240, 560])
         layout.addWidget(splitter)
 
-        # Load sessions on init
-        asyncio.create_task(self._async_load_sessions())
+        # Load sessions on init (deferred to allow event loop to start)
+        QTimer.singleShot(100, self._load_sessions)
 
     def _load_sessions(self):
         """Refresh sessions list."""
@@ -119,7 +119,7 @@ class MemoryPanel(QWidget):
         try:
             sessions = await self.memory_system.get_sessions()
             for session in sessions:
-                session_id = session.get("session_id", "unknown")
+                session_id = session.get("id", "unknown")
                 created = session.get("created_at", "")
                 title = session.get("title") or session_id[:12]
                 label = f"💬 {title}"

@@ -7,6 +7,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 from loguru import logger
 
 from src.api.nvidia_client import NVIDIAClient
+from src.capabilities.files import FileAction, PermissionType
 from src.config import Settings
 from src.memory.memory_system import MemorySystem
 
@@ -368,16 +369,16 @@ Guidelines:
 
             if action == "read":
                 # Request permission if needed
-                if not fs.check_permission(path, "read"):
-                    fs.request_permission(path, "read")
+                if not fs.check_permission(path, FileAction.READ):
+                    await fs.request_permission(path, PermissionType.READ, recursive=True)
                 file_content = await fs.read_file(path)
                 result_text = f"**File content of `{path}`:**\n\n```\n{file_content[:3000]}\n```"
                 if len(file_content) > 3000:
                     result_text += f"\n\n*(truncated — file has {len(file_content)} chars total)*"
 
             elif action == "list":
-                if not fs.check_permission(path, "read"):
-                    fs.request_permission(path, "read")
+                if not fs.check_permission(path, FileAction.READ):
+                    await fs.request_permission(path, PermissionType.READ, recursive=True)
                 file_infos = await fs.list_directory(path)
                 lines = [f"**Contents of `{path}`:**\n"]
                 for fi in file_infos[:50]:
@@ -389,8 +390,8 @@ Guidelines:
                 result_text = "\n".join(lines)
 
             elif action == "search":
-                if not fs.check_permission(path, "read"):
-                    fs.request_permission(path, "read")
+                if not fs.check_permission(path, FileAction.READ):
+                    await fs.request_permission(path, PermissionType.READ, recursive=True)
                 found = await fs.search_files(pattern, path)
                 lines = [f"**Search results for `{pattern}` in `{path}`:**\n"]
                 for f_path in found[:30]:
@@ -400,13 +401,13 @@ Guidelines:
                 result_text = "\n".join(lines)
 
             elif action == "write":
-                if not fs.check_permission(path, "write"):
-                    fs.request_permission(path, "write")
+                if not fs.check_permission(path, FileAction.WRITE):
+                    await fs.request_permission(path, PermissionType.WRITE, recursive=True)
                 await fs.write_file(path, content)
                 result_text = f"✅ Successfully wrote to `{path}`"
 
             elif action == "delete":
-                if not fs.check_permission(path, "write"):
+                if not fs.check_permission(path, FileAction.DELETE):
                     yield (
                         f"⚠️ Permission required to delete `{path}`. "
                         "Please grant write access in the Files panel.\n"
@@ -516,7 +517,7 @@ Guidelines:
             extracted_text = ""
             if browser_action in ("extract", "search", "navigate"):
                 # Take screenshot
-                screenshot_bytes = await browser.screenshot()
+                screenshot_bytes = await browser.take_screenshot()
                 yield f"📸 Screenshot captured ({len(screenshot_bytes):,} bytes)\n\n"
 
                 # Extract page text
