@@ -3,10 +3,11 @@ import asyncio
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QSortFilterProxyModel, QStringListModel, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QCompleter,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -36,6 +37,7 @@ class SettingsDialog(QDialog):
     def __init__(self, orchestrator: AgentOrchestrator, parent=None):
         super().__init__(parent)
         self.orchestrator = orchestrator
+        self._fetching_models = False
         self.setWindowTitle("Settings")
         self.setMinimumSize(600, 500)
         self._setup_ui()
@@ -121,10 +123,12 @@ class SettingsDialog(QDialog):
         layout = QFormLayout(widget)
         layout.setSpacing(12)
 
-        # Model selection
+        # Model selection with fetch button
+        model_layout = QHBoxLayout()
         self.model_combo = QComboBox()
         self.model_combo.setEditable(True)
-        self.model_combo.addItems([
+        self.model_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._default_models = [
             "meta/llama-3.1-8b-instruct",
             "meta/llama-3.1-70b-instruct",
             "meta/llama-3.1-405b-instruct",
@@ -133,8 +137,30 @@ class SettingsDialog(QDialog):
             "mistralai/mistral-7b-instruct-v0.3",
             "google/gemma-2-27b-it",
             "nvidia/nemotron-4-340b-instruct",
-        ])
-        layout.addRow("Model:", self.model_combo)
+            "moonshotai/kimi-k2-instruct",
+            "moonshotai/kimi-k2-thinking",
+            "moonshotai/kimi-k2.5",
+            "deepseek-ai/deepseek-r1",
+            "qwen/qwen2.5-72b-instruct",
+        ]
+        self.model_combo.addItems(self._default_models)
+        # Enable substring search/filter when typing
+        self._model_completer = QCompleter(self._default_models)
+        self._model_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._model_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        self.model_combo.setCompleter(self._model_completer)
+        model_layout.addWidget(self.model_combo, 1)
+
+        self.fetch_models_btn = QPushButton("Fetch Models")
+        self.fetch_models_btn.clicked.connect(self._fetch_models)
+        model_layout.addWidget(self.fetch_models_btn)
+
+        layout.addRow("Model:", model_layout)
+
+        # Model count label
+        self.model_count_label = QLabel("")
+        self.model_count_label.setStyleSheet("color: #888;")
+        layout.addRow("", self.model_count_label)
 
         # Temperature
         self.temp_spin = QSpinBox()
@@ -209,6 +235,8 @@ class SettingsDialog(QDialog):
             self.api_key_input.setText(stored_key)
             self.status_label.setText("Configured")
             self.status_label.setStyleSheet("color: #4caf50;")
+            # Auto-fetch models since we have an API key
+            QTimer.singleShot(300, lambda: self._fetch_models(silent=True))
 
         # Base URL
         self.base_url_input.setText(config.nvidia_base_url)
@@ -278,6 +306,8 @@ class SettingsDialog(QDialog):
                     f"Latency: {latency:.0f}ms\n"
                     f"Available models: {models}",
                 )
+                # Auto-fetch model list on successful connection
+                self._fetch_models()
             else:
                 error = health.get("error", "Unknown error")
                 self.status_label.setText(f"Failed: {error[:40]}")
@@ -300,6 +330,73 @@ class SettingsDialog(QDialog):
             await client.close()
             self.test_btn.setEnabled(True)
             self.test_btn.setText("Test Connection")
+
+    def _fetch_models(self, silent: bool = False):
+        """Fetch available models from the NVIDIA API."""
+        if self._fetching_models:
+            return
+
+        api_key = self.api_key_input.text().strip()
+        if not api_key:
+            if not silent:
+                QMessageBox.warning(self, "Warning", "Please enter an API key first")
+            return
+
+        self._fetching_models = True
+        self.fetch_models_btn.setEnabled(False)
+        self.fetch_models_btn.setText("Fetching...")
+        self.model_count_label.setText("Fetching models...")
+        self.model_count_label.setStyleSheet("color: #ffc107;")
+
+        asyncio.create_task(self._do_fetch_models(api_key))
+
+    async def _do_fetch_models(self, api_key: str):
+        """Fetch models from NVIDIA API asynchronously."""
+        from src.api.nvidia_client import NVIDIAClient
+
+        base_url = self.base_url_input.text().strip() or "https://integrate.api.nvidia.com/v1"
+        client = NVIDIAClient(api_key=api_key, base_url=base_url)
+        try:
+            models = await client.list_models()
+
+            if models:
+                # Remember current selection
+                current_model = self.model_combo.currentText()
+
+                # Filter to chat/completion models and sort
+                model_ids = sorted(m.get("id", "") for m in models if m.get("id"))
+
+                self.model_combo.clear()
+                self.model_combo.addItems(model_ids)
+
+                # Update the completer with the new model list
+                self._model_completer = QCompleter(model_ids)
+                self._model_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+                self._model_completer.setFilterMode(Qt.MatchFlag.MatchContains)
+                self.model_combo.setCompleter(self._model_completer)
+
+                # Restore previous selection if it exists
+                idx = self.model_combo.findText(current_model)
+                if idx >= 0:
+                    self.model_combo.setCurrentIndex(idx)
+                else:
+                    self.model_combo.setCurrentText(current_model)
+
+                self.model_count_label.setText(f"{len(model_ids)} models available")
+                self.model_count_label.setStyleSheet("color: #4caf50;")
+                logger.info(f"Fetched {len(model_ids)} models from API")
+            else:
+                self.model_count_label.setText("No models returned")
+                self.model_count_label.setStyleSheet("color: #ff5252;")
+        except Exception as e:
+            self.model_count_label.setText(f"Error: {str(e)[:50]}")
+            self.model_count_label.setStyleSheet("color: #ff5252;")
+            logger.error(f"Failed to fetch models: {e}")
+        finally:
+            await client.close()
+            self._fetching_models = False
+            self.fetch_models_btn.setEnabled(True)
+            self.fetch_models_btn.setText("Fetch Models")
 
     def _clear_memory(self):
         """Clear all memory."""

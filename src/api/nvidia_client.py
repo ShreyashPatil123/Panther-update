@@ -87,23 +87,27 @@ class NVIDIAClient:
                         f"{self.base_url}/chat/completions",
                         json=payload,
                     ) as response:
-                        if response.status_code in _NO_RETRY_CODES:
+                        # In streaming mode, must read body before
+                        # raise_for_status() can access response.text
+                        if response.status_code != 200:
+                            await response.aread()
+                            if response.status_code in _NO_RETRY_CODES:
+                                response.raise_for_status()
+                            if response.status_code in _RETRYABLE_CODES:
+                                wait = 2 ** attempt
+                                logger.warning(
+                                    f"Retryable HTTP {response.status_code}, "
+                                    f"attempt {attempt + 1}/{self.max_retries}, "
+                                    f"waiting {wait}s"
+                                )
+                                await asyncio.sleep(wait)
+                                last_error = httpx.HTTPStatusError(
+                                    f"HTTP {response.status_code}",
+                                    request=response.request,
+                                    response=response,
+                                )
+                                continue
                             response.raise_for_status()
-                        if response.status_code in _RETRYABLE_CODES:
-                            wait = 2 ** attempt
-                            logger.warning(
-                                f"Retryable HTTP {response.status_code}, "
-                                f"attempt {attempt + 1}/{self.max_retries}, "
-                                f"waiting {wait}s"
-                            )
-                            await asyncio.sleep(wait)
-                            last_error = httpx.HTTPStatusError(
-                                f"HTTP {response.status_code}",
-                                request=response.request,
-                                response=response,
-                            )
-                            continue
-                        response.raise_for_status()
 
                         async for line in response.aiter_lines():
                             if line.startswith("data: "):
@@ -117,7 +121,11 @@ class NVIDIAClient:
                                     chunk = json.loads(data)
                                     if "choices" in chunk and len(chunk["choices"]) > 0:
                                         delta = chunk["choices"][0].get("delta", {})
-                                        if "content" in delta:
+                                        # Support reasoning_content for thinking models
+                                        reasoning = delta.get("reasoning_content")
+                                        if reasoning:
+                                            yield reasoning
+                                        if delta.get("content"):
                                             yield delta["content"]
                                 except json.JSONDecodeError:
                                     logger.warning(f"Failed to parse JSON: {data}")
@@ -149,13 +157,19 @@ class NVIDIAClient:
                     data = response.json()
 
                     if "choices" in data and len(data["choices"]) > 0:
-                        content = data["choices"][0]["message"].get("content", "")
+                        msg = data["choices"][0]["message"]
+                        content = msg.get("content") or ""
+                        # Thinking models (e.g. kimi-k2-thinking, kimi-k2.5)
+                        # return content=null with the answer in reasoning_content
+                        if not content:
+                            content = msg.get("reasoning_content") or msg.get("reasoning") or ""
                         yield content
                     return  # success
 
             except httpx.HTTPStatusError as e:
                 if e.response.status_code in _NO_RETRY_CODES:
-                    logger.error(f"HTTP error {e.response.status_code}: {e.response.text}")
+                    error_body = getattr(e.response, "text", str(e))
+                    logger.error(f"HTTP error {e.response.status_code}: {error_body}")
                     raise
                 last_error = e
                 wait = 2 ** attempt
@@ -285,10 +299,15 @@ class NVIDIAClient:
             "meta/llama-3.1-70b-instruct",
             "meta/llama-3.1-405b-instruct",
             "meta/llama-3.3-70b-instruct",
-            "mistralai/mistral-large-2-instruct",
+            "mistralai/mistral-medium-3-instruct",
             "mistralai/mistral-7b-instruct-v0.3",
             "google/gemma-2-27b-it",
-            "nvidia/nemotron-4-340b-instruct",
+            "nvidia/llama-3.3-nemotron-super-49b-v1",
+            "moonshotai/kimi-k2-instruct",
+            "moonshotai/kimi-k2-thinking",
+            "moonshotai/kimi-k2.5",
+            "deepseek-ai/deepseek-v3.1",
+            "qwen/qwq-32b",
         ]
 
     async def close(self):

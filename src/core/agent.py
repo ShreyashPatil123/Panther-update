@@ -162,7 +162,18 @@ class AgentOrchestrator:
 
         except Exception as e:
             logger.error(f"Error processing message: {e}")
-            yield f"Sorry, I encountered an error: {str(e)}"
+            error_msg = str(e)
+            if "404" in error_msg:
+                yield (
+                    f"Model '{self.config.default_model}' was not found (404). "
+                    f"Please check the model name in Settings. "
+                    f"Model IDs use the format 'provider/model-name' "
+                    f"(e.g. 'moonshotai/kimi-k2-thinking')."
+                )
+            elif "401" in error_msg:
+                yield "Invalid API key. Please update your key in Settings."
+            else:
+                yield f"Sorry, I encountered an error: {error_msg}"
 
     async def _get_conversation_history(self, limit: int = 10) -> List[Dict[str, str]]:
         """Get recent conversation history as LLM messages.
