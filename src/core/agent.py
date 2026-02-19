@@ -9,6 +9,13 @@ from loguru import logger
 from src.api.nvidia_client import NVIDIAClient
 from src.capabilities.files import FileAction, PermissionType
 from src.config import Settings
+from src.core.file_processor import (
+    build_multimodal_content,
+    classify_file,
+    DEFAULT_VISION_MODEL,
+    FileType,
+)
+from src.core.model_router import TaskCategory, get_task_preset
 from src.memory.memory_system import MemorySystem
 
 
@@ -38,6 +45,10 @@ class AgentOrchestrator:
         self.active_tasks: Dict[str, asyncio.Task] = {}
         self.current_session_id = "default"
 
+        # Smart model routing
+        self.active_task_category: Optional[TaskCategory] = None
+        self.task_system_prompt: Optional[str] = None
+
         logger.info("Agent Orchestrator initialized")
 
     async def initialize(self):
@@ -58,6 +69,26 @@ class AgentOrchestrator:
             base_url=self.config.nvidia_base_url,
         )
         logger.info("NVIDIA API client initialized")
+
+    def set_task_category(self, category: Optional[TaskCategory]):
+        """Switch to a task-specific model and system prompt.
+
+        Args:
+            category: TaskCategory to activate, or None to reset to default.
+        """
+        if category is None:
+            self.active_task_category = None
+            self.task_system_prompt = None
+            logger.info("Task category cleared — using default model")
+            return
+
+        preset = get_task_preset(category)
+        self.active_task_category = category
+        self.config.default_model = preset.model
+        self.task_system_prompt = preset.system_prompt
+        logger.info(
+            f"Task category set to {category.value} — model: {preset.model}"
+        )
 
     @property
     def is_ready(self) -> bool:
@@ -159,6 +190,131 @@ class AgentOrchestrator:
             else:
                 async for chunk in self._handle_chat(messages):
                     yield chunk
+
+        except Exception as e:
+            logger.error(f"Error processing message: {e}")
+            yield f"Sorry, I encountered an error: {str(e)}"
+
+    async def process_message_with_attachments(
+        self,
+        message: str,
+        attachments: List[str],
+    ) -> AsyncIterator[str]:
+        """Process a user message with file attachments.
+
+        Handles images (vision model), documents (text extraction),
+        and videos (frame analysis) automatically.
+
+        Args:
+            message: User input text
+            attachments: List of file paths
+
+        Yields:
+            Response chunks
+        """
+        if not self.is_ready:
+            yield "Please configure your NVIDIA API key in settings first."
+            return
+
+        try:
+            # Process attachments
+            image_blocks, needs_vision, context_text = build_multimodal_content(
+                message, attachments
+            )
+
+            # Store user message
+            attachment_names = ", ".join(
+                __import__("os").path.basename(f) for f in attachments
+            )
+            await self.memory.add_message(
+                "user",
+                f"{message} [Attachments: {attachment_names}]",
+                session_id=self.current_session_id,
+            )
+
+            # Build the user content array (multimodal format)
+            user_content: List[Dict[str, Any]] = []
+
+            # Add context from documents/text files first
+            if context_text:
+                user_content.append({
+                    "type": "text",
+                    "text": f"The user has attached files. Here is their content:\n\n{context_text}",
+                })
+
+            # Add image blocks (for vision models)
+            user_content.extend(image_blocks)
+
+            # Add the user's question
+            user_content.append({
+                "type": "text",
+                "text": message,
+            })
+
+            # Select model
+            if needs_vision:
+                model = DEFAULT_VISION_MODEL
+                logger.info(f"Auto-switching to vision model: {model}")
+            else:
+                model = self.config.default_model
+
+            # Build messages list
+            system_prompt = self.task_system_prompt or (
+                "You are a helpful AI assistant with the ability to analyze "
+                "attached files including images, documents, and videos. "
+                "Provide thorough, detailed analysis when files are attached. "
+                "Use markdown formatting for clarity."
+            )
+
+            messages: List[Dict[str, Any]] = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content},
+            ]
+
+            # Vision models on NVIDIA NIM cap max_tokens at 1024
+            # and sometimes reject streaming for multimodal payloads.
+            if needs_vision:
+                max_tokens = 1024
+                use_stream = True  # try streaming first
+            else:
+                max_tokens = 4096
+                use_stream = True
+
+            # Stream response
+            full_response = ""
+            try:
+                async for chunk in self.nvidia_client.chat_completion(
+                    messages,
+                    model=model,
+                    max_tokens=max_tokens,
+                    stream=use_stream,
+                ):
+                    full_response += chunk
+                    yield chunk
+            except Exception as vision_err:
+                if needs_vision and use_stream:
+                    # Retry without streaming (some vision endpoints reject SSE)
+                    logger.warning(
+                        f"Streaming failed for vision model, retrying "
+                        f"non-streaming: {vision_err}"
+                    )
+                    full_response = ""
+                    async for chunk in self.nvidia_client.chat_completion(
+                        messages,
+                        model=model,
+                        max_tokens=max_tokens,
+                        stream=False,
+                    ):
+                        full_response += chunk
+                        yield chunk
+                else:
+                    raise
+
+            await self.memory.add_message(
+                "assistant",
+                full_response,
+                session_id=self.current_session_id,
+            )
 
         except Exception as e:
             logger.error(f"Error processing message: {e}")
@@ -292,6 +448,15 @@ Guidelines:
 
     async def _handle_chat(self, messages: List[Dict[str, str]]) -> AsyncIterator[str]:
         """Handle standard chat interaction."""
+        # Inject task-specific system prompt if active
+        if self.task_system_prompt:
+            system_msg = {"role": "system", "content": self.task_system_prompt}
+            # Prepend system message (or replace existing system message)
+            if messages and messages[0].get("role") == "system":
+                messages = [system_msg] + messages[1:]
+            else:
+                messages = [system_msg] + messages
+
         full_response = ""
         try:
             async for chunk in self.nvidia_client.chat_completion(

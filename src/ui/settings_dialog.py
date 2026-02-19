@@ -110,7 +110,7 @@ class SettingsDialog(QDialog):
 
         # Status label
         self.status_label = QLabel("Not configured")
-        self.status_label.setStyleSheet("color: #ff5252;")
+        self.status_label.setStyleSheet("color: #FF4500;")
         layout.addRow("Status:", self.status_label)
 
         return widget
@@ -125,15 +125,162 @@ class SettingsDialog(QDialog):
         self.model_combo = QComboBox()
         self.model_combo.setEditable(True)
         self.model_combo.addItems([
+            # --- Meta Llama ---
             "meta/llama-3.1-8b-instruct",
             "meta/llama-3.1-70b-instruct",
             "meta/llama-3.1-405b-instruct",
+            "meta/llama-3.2-1b-instruct",
+            "meta/llama-3.2-3b-instruct",
+            "meta/llama-3.2-11b-vision-instruct",
+            "meta/llama-3.2-90b-vision-instruct",
             "meta/llama-3.3-70b-instruct",
-            "mistralai/mistral-large-2-instruct",
+            "meta/llama-4-maverick-17b-128e-instruct",
+            "meta/llama-4-scout-17b-16e-instruct",
+            "meta/llama-guard-4-12b",
+            "meta/llama3-70b-instruct",
+            "meta/llama3-8b-instruct",
+            # --- Mistral ---
+            "mistralai/devstral-2-123b-instruct-2512",
+            "mistralai/magistral-small-2506",
+            "mistralai/mamba-codestral-7b-v0.1",
+            "mistralai/mathstral-7b-v0.1",
+            "mistralai/ministral-14b-instruct-2512",
+            "mistralai/mistral-7b-instruct-v0.2",
             "mistralai/mistral-7b-instruct-v0.3",
+            "mistralai/mistral-large-3-675b-instruct-2512",
+            "mistralai/mistral-medium-3-instruct",
+            "mistralai/mistral-nemotron",
+            "mistralai/mistral-small-24b-instruct",
+            "mistralai/mistral-small-3.1-24b-instruct-2503",
+            "mistralai/mixtral-8x7b-instruct-v0.1",
+            "mistralai/mixtral-8x22b-instruct-v0.1",
+            # --- Google ---
+            "google/gemma-2-2b-it",
+            "google/gemma-2-9b-it",
             "google/gemma-2-27b-it",
-            "nvidia/nemotron-4-340b-instruct",
+            "google/gemma-3-1b-it",
+            "google/gemma-3-4b-it",
+            "google/gemma-3-12b-it",
+            "google/gemma-3-27b-it",
+            "google/gemma-3n-e2b-it",
+            "google/gemma-3n-e4b-it",
+            "google/gemma-7b",
+            "google/shieldgemma-9b",
+            # --- NVIDIA ---
+            "nvidia/llama-3.1-nemoguard-8b-content-safety",
+            "nvidia/llama-3.1-nemoguard-8b-topic-control",
+            "nvidia/llama-3.1-nemotron-70b-reward",
+            "nvidia/llama-3.1-nemotron-nano-4b-v1.1",
+            "nvidia/llama-3.1-nemotron-nano-8b-v1",
+            "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
+            "nvidia/llama-3.1-nemotron-safety-guard-8b-v3",
+            "nvidia/llama-3.3-nemotron-super-49b-v1",
+            "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+            "nvidia/llama3-chatqa-1.5-8b",
+            "nvidia/nemotron-3-nano-30b-a3b",
+            "nvidia/nemotron-4-mini-hindi-4b-instruct",
+            "nvidia/nemotron-content-safety-reasoning-4b",
+            "nvidia/nemotron-mini-4b-instruct",
+            "nvidia/nvidia-nemotron-nano-9b-v2",
+            "nvidia/riva-translate-4b-instruct-v1.1",
+            "nvidia/usdcode-llama-3.1-70b-instruct",
+            # --- Deepseek ---
+            "deepseek-ai/deepseek-r1-distill-llama-8b",
+            "deepseek-ai/deepseek-r1-distill-qwen-14b",
+            "deepseek-ai/deepseek-r1-distill-qwen-32b",
+            "deepseek-ai/deepseek-v3.1",
+            "deepseek-ai/deepseek-v3.1-terminus",
+            "deepseek-ai/deepseek-v3.2",
+            # --- Qwen ---
+            "qwen/qwen2-7b-instruct",
+            "qwen/qwen2.5-7b-instruct",
+            "qwen/qwen2.5-coder-32b-instruct",
+            "qwen/qwen2.5-coder-7b-instruct",
+            "qwen/qwen3-235b-a22b",
+            "qwen/qwen3-coder-480b-a35b-instruct",
+            "qwen/qwen3-next-80b-a3b-instruct",
+            "qwen/qwen3-next-80b-a3b-thinking",
+            "qwen/qwq-32b",
+            # --- Microsoft ---
+            "microsoft/phi-3-medium-128k-instruct",
+            "microsoft/phi-3-medium-4k-instruct",
+            "microsoft/phi-3-mini-128k-instruct",
+            "microsoft/phi-3-mini-4k-instruct",
+            "microsoft/phi-3-small-128k-instruct",
+            "microsoft/phi-3-small-8k-instruct",
+            "microsoft/phi-3.5-mini-instruct",
+            "microsoft/phi-3.5-vision-instruct",
+            "microsoft/phi-4-mini-flash-reasoning",
+            "microsoft/phi-4-mini-instruct",
+            "microsoft/phi-4-multimodal-instruct",
+            # --- Moonshot ---
+            "moonshotai/kimi-k2-instruct",
+            "moonshotai/kimi-k2-instruct-0905",
+            "moonshotai/kimi-k2-thinking",
+            # --- OpenAI (open-source) ---
+            "openai/gpt-oss-20b",
+            "openai/gpt-oss-120b",
+            # --- MiniMax ---
+            "minimaxai/minimax-m2",
+            "minimaxai/minimax-m2.1",
+            # --- AI21 Labs ---
+            "ai21labs/jamba-1.5-mini-instruct",
+            # --- Abacus AI ---
+            "abacusai/dracarys-llama-3.1-70b-instruct",
+            # --- IBM ---
+            "ibm/granite-3.3-8b-instruct",
+            "ibm/granite-guardian-3.0-8b",
+            # --- Stepfun ---
+            "stepfun-ai/step-3.5-flash",
+            # --- Z-AI (Zhipu) ---
+            "z-ai/glm4.7",
+            "z-ai/glm5",
+            # --- ByteDance ---
+            "bytedance/seed-oss-36b-instruct",
+            # --- Tiiuae ---
+            "tiiuae/falcon3-7b-instruct",
+            # --- Upstage ---
+            "upstage/solar-10.7b-instruct",
+            # --- Baichuan ---
+            "baichuan-inc/baichuan2-13b-chat",
+            # --- THU ---
+            "thudm/chatglm3-6b",
+            # --- Sarvamai ---
+            "sarvamai/sarvam-m",
+            # --- Rakuten ---
+            "rakuten/rakutenai-7b-chat",
+            "rakuten/rakutenai-7b-instruct",
+            # --- Igenius ---
+            "igenius/italia_10b_instruct_16k",
+            # --- Stockmark ---
+            "stockmark/stockmark-2-100b-instruct",
+            # --- Speakleash ---
+            "speakleash/bielik-11b-v2.3-instruct",
+            "speakleash/bielik-11b-v2.6-instruct",
+            # --- Other ---
+            "gotocompany/gemma-2-9b-cpt-sahabatai-instruct",
+            "institute-of-science-tokyo/llama-3.1-swallow-70b-instruct-v0.1",
+            "institute-of-science-tokyo/llama-3.1-swallow-8b-instruct-v0.1",
+            "marin/marin-8b-instruct",
+            "mediatek/breeze-7b-instruct",
+            "opengpt-x/teuken-7b-instruct-commercial-v0.4",
+            "tokyotech-llm/llama-3-swallow-70b-instruct-v0.1",
+            "utter-project/eurollm-9b-instruct",
+            "yentinglin/llama-3-taiwan-70b-instruct",
         ])
+        self.model_combo.setMaxVisibleItems(20)
+        self.model_combo.setMaxCount(200)
+
+        # Add search/filter completer for easy model lookup
+        from PyQt6.QtCore import Qt as QtCore_Qt
+        from PyQt6.QtWidgets import QCompleter
+        completer = QCompleter([
+            self.model_combo.itemText(i) for i in range(self.model_combo.count())
+        ])
+        completer.setCaseSensitivity(QtCore_Qt.CaseSensitivity.CaseInsensitive)
+        completer.setFilterMode(QtCore_Qt.MatchFlag.MatchContains)
+        self.model_combo.setCompleter(completer)
+
         layout.addRow("Model:", self.model_combo)
 
         # Temperature
@@ -145,7 +292,7 @@ class SettingsDialog(QDialog):
 
         # Max tokens
         self.tokens_spin = QSpinBox()
-        self.tokens_spin.setRange(256, 8192)
+        self.tokens_spin.setRange(256, 32768)
         self.tokens_spin.setSingleStep(256)
         self.tokens_spin.setValue(4096)
         layout.addRow("Max Tokens:", self.tokens_spin)
@@ -190,7 +337,7 @@ class SettingsDialog(QDialog):
         # Clear memory button
         clear_btn = QPushButton("Clear All Memory")
         clear_btn.setStyleSheet(
-            "QPushButton { background-color: #ff5252; color: white; }"
+            "QPushButton { background-color: #FF4500; color: white; }"
         )
         clear_btn.clicked.connect(self._clear_memory)
         layout.addWidget(clear_btn)
@@ -208,7 +355,7 @@ class SettingsDialog(QDialog):
         if stored_key:
             self.api_key_input.setText(stored_key)
             self.status_label.setText("Configured")
-            self.status_label.setStyleSheet("color: #4caf50;")
+            self.status_label.setStyleSheet("color: #FF8C42;")
 
         # Base URL
         self.base_url_input.setText(config.nvidia_base_url)
@@ -250,7 +397,7 @@ class SettingsDialog(QDialog):
         self.test_btn.setEnabled(False)
         self.test_btn.setText("Testing...")
         self.status_label.setText("Testing...")
-        self.status_label.setStyleSheet("color: #ffc107;")
+        self.status_label.setStyleSheet("color: #FFA500;")
 
         # Test asynchronously
         asyncio.create_task(self._do_test_connection(api_key))
@@ -270,7 +417,7 @@ class SettingsDialog(QDialog):
                 self.status_label.setText(
                     f"Connected ({latency:.0f}ms, {models} models)"
                 )
-                self.status_label.setStyleSheet("color: #4caf50;")
+                self.status_label.setStyleSheet("color: #FF8C42;")
                 QMessageBox.information(
                     self,
                     "Success",
@@ -281,7 +428,7 @@ class SettingsDialog(QDialog):
             else:
                 error = health.get("error", "Unknown error")
                 self.status_label.setText(f"Failed: {error[:40]}")
-                self.status_label.setStyleSheet("color: #ff5252;")
+                self.status_label.setStyleSheet("color: #FF4500;")
                 QMessageBox.critical(
                     self,
                     "Connection Failed",
@@ -294,7 +441,7 @@ class SettingsDialog(QDialog):
                 )
         except Exception as e:
             self.status_label.setText(f"Error: {str(e)[:50]}")
-            self.status_label.setStyleSheet("color: #ff5252;")
+            self.status_label.setStyleSheet("color: #FF4500;")
             QMessageBox.critical(self, "Error", f"Connection failed: {str(e)}")
         finally:
             await client.close()
@@ -347,7 +494,7 @@ class SettingsDialog(QDialog):
         # Update status
         if self.orchestrator.is_ready:
             self.status_label.setText("Configured")
-            self.status_label.setStyleSheet("color: #4caf50;")
+            self.status_label.setStyleSheet("color: #FF8C42;")
 
         self.settings_changed.emit()
         logger.info("Settings saved")
