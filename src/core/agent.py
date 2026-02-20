@@ -56,14 +56,22 @@ class AgentOrchestrator:
         logger.info("Initializing agent orchestrator")
         await self.memory.initialize()
 
-        # Initialize API client if key is available
-        if self.config.nvidia_api_key:
+        # Initialize API client if a real key is available from .env
+        if self.config.nvidia_api_key and self.config.nvidia_api_key != "your_api_key_here":
             self.set_api_key(self.config.nvidia_api_key)
 
         logger.info("Agent orchestrator initialized successfully")
 
     def set_api_key(self, api_key: str):
-        """Set NVIDIA API key and initialize client."""
+        """Set NVIDIA API key and initialize/reinitialize client."""
+        # Close existing client if present
+        if self.nvidia_client is not None:
+            try:
+                asyncio.get_event_loop().create_task(self.nvidia_client.close())
+            except Exception:
+                pass
+
+        self.config.nvidia_api_key = api_key
         self.nvidia_client = NVIDIAClient(
             api_key=api_key,
             base_url=self.config.nvidia_base_url,
@@ -319,6 +327,173 @@ class AgentOrchestrator:
         except Exception as e:
             logger.error(f"Error processing message: {e}")
             yield f"Sorry, I encountered an error: {str(e)}"
+
+    async def process_message_with_screen(
+        self,
+        message: str,
+        screen_b64: str,
+    ) -> AsyncIterator[str]:
+        """Process a message with a screen capture screenshot as context.
+
+        The screenshot is sent as a base64 image to a vision model, identical
+        to the file attachment flow but with a screen context label.
+
+        Args:
+            message: User input text
+            screen_b64: Base64-encoded JPEG screenshot
+
+        Yields:
+            Response chunks
+        """
+        if not self.is_ready:
+            yield "Please configure your NVIDIA API key in settings first."
+            return
+
+        try:
+            # Store user message
+            await self.memory.add_message(
+                "user",
+                f"{message} [Screen context included]",
+                session_id=self.current_session_id,
+            )
+
+            # Build multimodal content with screen image
+            user_content: List[Dict[str, Any]] = [
+                {
+                    "type": "text",
+                    "text": (
+                        "[Screen Context \u2014 captured while app was in background]\n"
+                        "The following image is a screenshot of the user's screen."
+                    ),
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{screen_b64}",
+                    },
+                },
+                {
+                    "type": "text",
+                    "text": message,
+                },
+            ]
+
+            model = DEFAULT_VISION_MODEL
+            logger.info(f"Processing screen context with vision model: {model}")
+
+            system_prompt = self.task_system_prompt or (
+                "You are a helpful AI assistant that can see the user's screen. "
+                "The user has shared a screenshot of their screen with you. "
+                "Describe what you see, answer their question about the screen content, "
+                "or help them with the task they're working on. "
+                "Use markdown formatting for clarity."
+            )
+
+            messages: List[Dict[str, Any]] = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content},
+            ]
+
+            full_response = ""
+            try:
+                async for chunk in self.nvidia_client.chat_completion(
+                    messages,
+                    model=model,
+                    max_tokens=1024,
+                    stream=True,
+                ):
+                    full_response += chunk
+                    yield chunk
+            except Exception as vision_err:
+                # Retry without streaming (some vision endpoints reject SSE)
+                logger.warning(
+                    f"Streaming failed for vision model, retrying "
+                    f"non-streaming: {vision_err}"
+                )
+                full_response = ""
+                async for chunk in self.nvidia_client.chat_completion(
+                    messages,
+                    model=model,
+                    max_tokens=1024,
+                    stream=False,
+                ):
+                    full_response += chunk
+                    yield chunk
+
+            await self.memory.add_message(
+                "assistant",
+                full_response,
+                session_id=self.current_session_id,
+            )
+
+        except Exception as e:
+            logger.error(f"Error processing screen context: {e}")
+            yield f"Sorry, I encountered an error analyzing the screen: {str(e)}"
+
+    async def extract_text_from_screen(self, screen_b64: str) -> Optional[str]:
+        """OCR: Extract visible text from a screenshot via NVIDIA NIM vision model.
+
+        Sends the screenshot to the vision model with an OCR-focused prompt.
+        Used by the Gemini Live OCR loop to get text context for voice sessions.
+
+        Args:
+            screen_b64: Base64-encoded JPEG screenshot
+
+        Returns:
+            Extracted text or None if failed/empty
+        """
+        if not self.is_ready:
+            return None
+
+        messages: List[Dict[str, Any]] = [
+            {
+                "role": "system",
+                "content": "You are an OCR assistant. Extract text only.",
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{screen_b64}",
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": (
+                            "Read and extract all visible text from this screen. "
+                            "Preserve structure, layout, and hierarchy. "
+                            "Return only the extracted content, nothing else."
+                        ),
+                    },
+                ],
+            },
+        ]
+
+        try:
+            full_response = ""
+            async for chunk in self.nvidia_client.chat_completion(
+                messages,
+                model=DEFAULT_VISION_MODEL,
+                max_tokens=2048,
+                stream=False,
+            ):
+                full_response += chunk
+
+            text = full_response.strip()
+            if not text:
+                return None
+
+            # Truncate if too long to avoid overwhelming Gemini context
+            if len(text) > 4000:
+                text = text[:4000]
+
+            return text
+
+        except Exception as e:
+            logger.error(f"OCR extraction failed: {e}")
+            return None
 
     async def _get_conversation_history(self, limit: int = 10) -> List[Dict[str, str]]:
         """Get recent conversation history as LLM messages.

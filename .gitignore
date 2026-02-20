@@ -60,3 +60,6 @@ htmlcov/
 
 # PyInstaller
 *.spec
+
+# Local assistant settings
+.claude/

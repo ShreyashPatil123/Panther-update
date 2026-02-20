@@ -59,6 +59,10 @@ class SettingsDialog(QDialog):
         self.model_tab = self._create_model_tab()
         self.tabs.addTab(self.model_tab, "Model")
 
+        # Screen tab
+        self.screen_tab = self._create_screen_tab()
+        self.tabs.addTab(self.screen_tab, "Screen")
+
         # Memory tab
         self.memory_tab = self._create_memory_tab()
         self.tabs.addTab(self.memory_tab, "Memory")
@@ -112,6 +116,32 @@ class SettingsDialog(QDialog):
         self.status_label = QLabel("Not configured")
         self.status_label.setStyleSheet("color: #FF4500;")
         layout.addRow("Status:", self.status_label)
+
+        # --- Separator ---
+        from PyQt6.QtWidgets import QFrame
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setStyleSheet("color: #2a2218; max-height: 1px; margin: 12px 0;")
+        layout.addRow("", separator)
+
+        # Google API Key
+        google_key_layout = QHBoxLayout()
+        self.google_api_key_input = QLineEdit()
+        self.google_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.google_api_key_input.setPlaceholderText("Enter your Google API key")
+        google_key_layout.addWidget(self.google_api_key_input)
+
+        self.show_google_key_btn = QPushButton("Show")
+        self.show_google_key_btn.setCheckable(True)
+        self.show_google_key_btn.toggled.connect(self._toggle_google_key_visibility)
+        google_key_layout.addWidget(self.show_google_key_btn)
+
+        layout.addRow("Google API Key:", google_key_layout)
+
+        # Helper note
+        google_note = QLabel("Used for Gemini Live voice conversations")
+        google_note.setStyleSheet("color: #8a8078; font-size: 11px; padding-left: 2px;")
+        layout.addRow("", google_note)
 
         return widget
 
@@ -299,6 +329,154 @@ class SettingsDialog(QDialog):
 
         return widget
 
+    def _create_screen_tab(self) -> QWidget:
+        """Create screen access settings tab."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(12)
+
+        # Screen Access group
+        access_group = QGroupBox("Screen Access")
+        access_layout = QVBoxLayout(access_group)
+
+        self.screen_vision_check = QCheckBox("Allow screen reading for vision models")
+        self.screen_vision_check.setChecked(False)
+        access_layout.addWidget(self.screen_vision_check)
+
+        self.screen_gemini_check = QCheckBox("Allow screen sharing during Gemini Live")
+        self.screen_gemini_check.setChecked(False)
+        access_layout.addWidget(self.screen_gemini_check)
+
+        layout.addWidget(access_group)
+
+        # Capture Settings group
+        capture_group = QGroupBox("Capture Settings")
+        capture_layout = QFormLayout(capture_group)
+
+        # Monitor selection
+        self.monitor_combo = QComboBox()
+        self._populate_monitors()
+        capture_layout.addRow("Monitor:", self.monitor_combo)
+
+        # Capture interval
+        self.capture_interval_spin = QSpinBox()
+        self.capture_interval_spin.setRange(1, 10)
+        self.capture_interval_spin.setValue(3)
+        self.capture_interval_spin.setSuffix(" seconds")
+        capture_layout.addRow("Capture interval:", self.capture_interval_spin)
+
+        layout.addWidget(capture_group)
+
+        # Privacy note
+        privacy_note = QLabel(
+            "Screen is only accessed when this app is running in the background.\n"
+            "Screenshots are never saved to disk \u2014 processed in memory only."
+        )
+        privacy_note.setStyleSheet("color: #8a8078; font-size: 11px; padding: 4px;")
+        privacy_note.setWordWrap(True)
+        layout.addWidget(privacy_note)
+
+        # Info button
+        info_btn = QPushButton("What can this app see?")
+        info_btn.setStyleSheet(
+            "QPushButton { background-color: transparent; color: #FF8C42; "
+            "border: 1px solid #2a2218; padding: 6px; }"
+            "QPushButton:hover { border-color: #FF8C42; }"
+        )
+        info_btn.clicked.connect(self._show_screen_info)
+        layout.addWidget(info_btn)
+
+        # Test button
+        test_btn = QPushButton("Test screen capture")
+        test_btn.setStyleSheet(
+            "QPushButton { background-color: #1e1a14; color: #FF8C42; "
+            "border: 1px solid #2a2218; padding: 6px; }"
+            "QPushButton:hover { border-color: #FF8C42; background-color: #2a2218; }"
+        )
+        test_btn.clicked.connect(self._test_screen_capture)
+        layout.addWidget(test_btn)
+
+        # OCR info
+        ocr_note = QLabel(
+            "OCR is powered by your NVIDIA NIM vision model.\n"
+            "Screen is only read when this app is in the background."
+        )
+        ocr_note.setStyleSheet("color: #8a8078; font-size: 11px; padding: 4px;")
+        ocr_note.setWordWrap(True)
+        layout.addWidget(ocr_note)
+
+        layout.addStretch()
+
+        return widget
+
+    def _populate_monitors(self):
+        """Populate monitor dropdown from available screens."""
+        self.monitor_combo.clear()
+        try:
+            from src.capabilities.screen_capture import ScreenCaptureService
+
+            service = ScreenCaptureService()
+            monitors = service.available_monitors()
+            for mon in monitors:
+                self.monitor_combo.addItem(mon["name"], mon["index"])
+        except Exception:
+            self.monitor_combo.addItem("Primary", 0)
+
+    def _show_screen_info(self):
+        """Show info dialog explaining screen access behavior."""
+        QMessageBox.information(
+            self,
+            "Screen Access Information",
+            "When enabled, this app can capture your screen ONLY while it is "
+            "minimized or unfocused.\n\n"
+            "The moment you bring the app to the foreground, screen capture "
+            "stops immediately.\n\n"
+            "Screenshots are processed in memory and never saved to disk.\n\n"
+            "For vision models: the screenshot is sent as an image to the AI "
+            "model with your message.\n\n"
+            "For Gemini Live: screenshots are processed by your NVIDIA NIM "
+            "vision model to extract text (OCR), which is then sent as context "
+            "to Gemini during your voice session.\n\n"
+            "You can stop screen capture at any time by disabling it here or "
+            "bringing the app to focus.",
+        )
+
+    def _test_screen_capture(self):
+        """Take a test screenshot and show results (with optional OCR)."""
+        from src.capabilities.screen_capture import ScreenCaptureService
+
+        monitor_idx = self.monitor_combo.currentData() or 0
+        service = ScreenCaptureService(monitor=monitor_idx)
+        # Temporarily allow capture for test (bypass background check)
+        service._app_in_background = True
+        frame = service.capture_once()
+
+        if frame is None:
+            QMessageBox.warning(
+                self,
+                "Test Failed",
+                "Could not capture screen. Make sure mss and Pillow are installed.",
+            )
+            return
+
+        size_kb = len(frame) / 1024
+        msg = (
+            f"Screenshot captured successfully!\n\n"
+            f"Size: {size_kb:.1f} KB\n"
+            f"Format: JPEG (in-memory, not saved to disk)\n\n"
+        )
+
+        # Check if NVIDIA API is available for OCR test
+        if self.orchestrator and self.orchestrator.is_ready:
+            msg += (
+                "NVIDIA API is configured. To test OCR, enable screen reading\n"
+                "and minimize the app, then send a message."
+            )
+        else:
+            msg += "Configure NVIDIA API key to test OCR text extraction."
+
+        QMessageBox.information(self, "Screen Capture Test", msg)
+
     def _create_memory_tab(self) -> QWidget:
         """Create memory settings tab."""
         widget = QWidget()
@@ -350,15 +528,34 @@ class SettingsDialog(QDialog):
         """Load current settings."""
         config = self.orchestrator.config
 
-        # Load API key from secure storage
+        # Load API key: prefer keyring, fall back to .env
         stored_key = SecureStorage.get_api_key()
         if stored_key:
             self.api_key_input.setText(stored_key)
-            self.status_label.setText("Configured")
+            self.status_label.setText("Configured (from secure storage)")
             self.status_label.setStyleSheet("color: #FF8C42;")
+        elif config.nvidia_api_key and config.nvidia_api_key != "your_api_key_here":
+            self.api_key_input.setText(config.nvidia_api_key)
+            self.status_label.setText("Configured (from .env)")
+            self.status_label.setStyleSheet("color: #FF8C42;")
+
+        # Load Google API key: prefer keyring, fall back to .env
+        stored_google_key = SecureStorage.get_google_api_key()
+        if stored_google_key:
+            self.google_api_key_input.setText(stored_google_key)
+        elif config.google_api_key:
+            self.google_api_key_input.setText(config.google_api_key)
 
         # Base URL
         self.base_url_input.setText(config.nvidia_base_url)
+
+        # Screen capture settings
+        self.screen_vision_check.setChecked(config.screen_capture_vision)
+        self.screen_gemini_check.setChecked(config.screen_capture_gemini)
+        monitor_index = self.monitor_combo.findData(config.screen_capture_monitor)
+        if monitor_index >= 0:
+            self.monitor_combo.setCurrentIndex(monitor_index)
+        self.capture_interval_spin.setValue(config.screen_capture_interval)
 
         # Database path
         self.db_path_input.setText(str(config.db_path))
@@ -378,6 +575,15 @@ class SettingsDialog(QDialog):
         else:
             self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
             self.show_key_btn.setText("Show")
+
+    def _toggle_google_key_visibility(self, checked: bool):
+        """Toggle Google API key visibility."""
+        if checked:
+            self.google_api_key_input.setEchoMode(QLineEdit.EchoMode.Normal)
+            self.show_google_key_btn.setText("Hide")
+        else:
+            self.google_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+            self.show_google_key_btn.setText("Show")
 
     def _browse_db_path(self):
         """Browse for database path."""
@@ -475,21 +681,51 @@ class SettingsDialog(QDialog):
 
     def _save_settings(self):
         """Save settings."""
-        # Save API key
         api_key = self.api_key_input.text().strip()
-        if api_key:
-            SecureStorage.store_api_key(api_key)
-            self.orchestrator.set_api_key(api_key)
-
-        # Save base URL
         base_url = self.base_url_input.text().strip()
+
+        # Update base URL first (before recreating client)
         if base_url:
             self.orchestrator.config.nvidia_base_url = base_url
+
+        # Save API key to secure storage and (re)initialize the client
+        if api_key:
+            SecureStorage.store_api_key(api_key)
+            # set_api_key will use the current config.nvidia_base_url
+            self.orchestrator.set_api_key(api_key)
+            # Also write to .env so it persists across sessions
+            self._update_env_file("NVIDIA_API_KEY", api_key)
+
+        if base_url:
+            self._update_env_file("NVIDIA_BASE_URL", base_url)
+
+        # Save Google API key
+        google_key = self.google_api_key_input.text().strip()
+        if google_key:
+            SecureStorage.store_google_api_key(google_key)
+            self.orchestrator.config.google_api_key = google_key
+            self._update_env_file("GOOGLE_API_KEY", google_key)
+
+        # Save screen capture settings
+        config = self.orchestrator.config
+        config.screen_capture_vision = self.screen_vision_check.isChecked()
+        config.screen_capture_gemini = self.screen_gemini_check.isChecked()
+        config.screen_capture_monitor = self.monitor_combo.currentData() or 0
+        config.screen_capture_interval = self.capture_interval_spin.value()
+        self._update_env_file(
+            "SCREEN_CAPTURE_VISION", str(config.screen_capture_vision).lower()
+        )
+        self._update_env_file(
+            "SCREEN_CAPTURE_GEMINI", str(config.screen_capture_gemini).lower()
+        )
+        self._update_env_file("SCREEN_CAPTURE_MONITOR", str(config.screen_capture_monitor))
+        self._update_env_file("SCREEN_CAPTURE_INTERVAL", str(config.screen_capture_interval))
 
         # Save model selection
         model = self.model_combo.currentText().strip()
         if model:
             self.orchestrator.config.default_model = model
+            self._update_env_file("DEFAULT_MODEL", model)
 
         # Update status
         if self.orchestrator.is_ready:
@@ -498,6 +734,32 @@ class SettingsDialog(QDialog):
 
         self.settings_changed.emit()
         logger.info("Settings saved")
+
+    def _update_env_file(self, key: str, value: str):
+        """Update a key in the .env file, or add it if missing."""
+        from pathlib import Path
+
+        env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+        try:
+            if env_path.exists():
+                lines = env_path.read_text(encoding="utf-8").splitlines()
+            else:
+                lines = []
+
+            found = False
+            for i, line in enumerate(lines):
+                stripped = line.strip()
+                if stripped.startswith(f"{key}=") or stripped.startswith(f"{key} ="):
+                    lines[i] = f"{key}={value}"
+                    found = True
+                    break
+
+            if not found:
+                lines.append(f"{key}={value}")
+
+            env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"Could not update .env file: {e}")
 
     def accept(self):
         """Handle OK button."""

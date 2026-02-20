@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 
 import httpx
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import Qt, QEvent, QTimer, pyqtSignal, pyqtSlot
 from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -586,9 +586,35 @@ class MainWindow(QMainWindow):
         self.orchestrator = orchestrator
         self._is_recording = False
         self._speech_interface = None  # Lazy-loaded
+        self._gemini_client = None
+        self._gemini_session_task = None
+        self._mic_stream = None
+        self._app_in_background = False
+        self._screen_frame_callback = None  # bound callback for Gemini Live (legacy)
+        self._screen_ocr_callback = None  # OCR text callback for Gemini Live
+
+        # Initialize screen capture service
+        from src.capabilities.screen_capture import ScreenCaptureService
+
+        self._screen_service = ScreenCaptureService(
+            monitor=orchestrator.config.screen_capture_monitor,
+            interval=orchestrator.config.screen_capture_interval,
+        )
+        self._screen_service.vision_enabled = orchestrator.config.screen_capture_vision
+        self._screen_service.gemini_enabled = orchestrator.config.screen_capture_gemini
+
         self._setup_ui()
         self._connect_signals()
         self._update_status()
+
+        # Start screen capture loop (only captures when app is in background + enabled)
+        if self._screen_service.is_available:
+            self._screen_service.start()
+
+        # Listen for application-wide focus changes
+        app = QApplication.instance()
+        if app:
+            app.applicationStateChanged.connect(self._on_app_state_changed)
 
         # Start with settings if no API key
         if not orchestrator.is_ready:
@@ -710,6 +736,7 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             self._update_status()
             self.sidebar.set_model(self.orchestrator.config.default_model)
+            self._reload_screen_settings()
 
     def _new_chat(self):
         """Start a new chat session."""
@@ -735,6 +762,28 @@ class MainWindow(QMainWindow):
             self.chat_widget.add_message(
                 "Please configure your NVIDIA API key in Settings first.",
                 is_user=False,
+            )
+            return
+
+        # Check if screen context should be injected
+        screen_b64 = None
+        if (
+            self.orchestrator.config.screen_capture_vision
+            and self._app_in_background
+            and self._screen_service.is_available
+        ):
+            screen_b64 = self._screen_service.get_latest_base64()
+
+        if screen_b64:
+            # Route through attachment flow with screen context
+            self.chat_widget.add_message(
+                message + "\n🖥️ [Screen context included]", is_user=True
+            )
+            self.chat_widget.set_enabled(False)
+            self.chat_widget.add_typing_indicator()
+            self.sidebar.set_status("● Processing with screen context...")
+            asyncio.create_task(
+                self._process_message_with_screen(message, screen_b64)
             )
             return
 
@@ -952,65 +1001,401 @@ class MainWindow(QMainWindow):
             self.chat_widget.set_enabled(True)
             self._update_status()
 
-    def _on_voice_requested(self):
-        """Handle voice mic button click."""
-        if self._is_recording:
-            # Stop recording
-            self._is_recording = False
-            self.chat_widget.set_voice_recording(False)
-        else:
-            # Start recording
-            self._is_recording = True
-            self.chat_widget.set_voice_recording(True)
-            asyncio.create_task(self._record_and_transcribe())
+    async def _process_message_with_screen(self, message: str, screen_b64: str):
+        """Process message with screen context injected as a vision model image."""
+        import time
 
-    async def _record_and_transcribe(self):
-        """Record audio and transcribe to text."""
+        response_text = ""
+        ai_bubble: Optional[MessageBubble] = None
+        last_render_time = 0.0
+        RENDER_INTERVAL = 0.12
+
         try:
-            # Lazy-load speech interface
-            if self._speech_interface is None:
-                self.sidebar.set_status("Loading speech model...")
-                try:
-                    from src.capabilities.speech import SpeechInterface
-                    self._speech_interface = SpeechInterface()
-                    logger.info("SpeechInterface loaded")
-                except ImportError as e:
-                    logger.error(f"Speech not available: {e}")
-                    self.chat_widget.set_transcription("")
-                    self.chat_widget.add_message(
-                        "Speech requires faster-whisper and piper-tts to be installed.",
-                        is_user=False,
-                    )
-                    self._is_recording = False
-                    return
+            self.sidebar.set_status("● Analyzing screen...")
 
-            self.sidebar.set_status("● Recording...")
+            async for chunk in self.orchestrator.process_message_with_screen(
+                message, screen_b64
+            ):
+                response_text += chunk
 
-            # Record audio (5 seconds with VAD)
-            text = await self._speech_interface.listen_and_transcribe(duration=5)
+                if ai_bubble is None:
+                    self.chat_widget.remove_typing_indicator()
+                    ai_bubble = self.chat_widget.begin_ai_response()
+                    self.sidebar.set_status("● Streaming response...")
 
-            if text:
-                self.chat_widget.set_transcription(text)
-                logger.info(f"Transcribed: {text}")
-            else:
-                self.chat_widget.set_voice_recording(False)
-                self.chat_widget.add_message(
-                    "No speech detected. Please try again.",
-                    is_user=False,
-                )
+                now = time.monotonic()
+                if now - last_render_time >= RENDER_INTERVAL:
+                    self.chat_widget.update_ai_response(response_text)
+                    last_render_time = now
+
+                await asyncio.sleep(0)
+
+            if ai_bubble is not None:
+                self.chat_widget.update_ai_response(response_text)
+                self.chat_widget.finish_ai_response()
 
         except Exception as e:
-            logger.error(f"Voice recording error: {e}")
-            self.chat_widget.set_voice_recording(False)
-            self.chat_widget.add_message(
-                f"Voice recording error: {e}",
-                is_user=False,
-            )
+            logger.error(f"Error processing message with screen: {e}")
+            if ai_bubble is None:
+                self.chat_widget.remove_typing_indicator()
+                ai_bubble = self.chat_widget.begin_ai_response()
+            self.chat_widget.update_ai_response(f"Error: {str(e)}")
+
         finally:
-            self._is_recording = False
+            if ai_bubble is None:
+                self.chat_widget.remove_typing_indicator()
+                self.chat_widget.add_message("No response received.", is_user=False)
+
+            self.chat_widget.finish_ai_response()
+            self.chat_widget.set_enabled(True)
             self._update_status()
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Gemini Live voice session
+    # ─────────────────────────────────────────────────────────────────────
+
+    def _on_voice_requested(self):
+        """Handle voice mic button click — toggle Gemini Live session."""
+        if self._is_recording:
+            # Stop: tear down session
+            self._is_recording = False
+            asyncio.create_task(self._stop_gemini_session())
+        else:
+            # Start: check for Google API key, then launch session
+            google_key = self._get_google_api_key()
+            if not google_key:
+                self.chat_widget.add_message(
+                    "Google API key required for voice conversations. "
+                    "Please add it in Settings > API tab.",
+                    is_user=False,
+                )
+                self.chat_widget.voice_btn.setChecked(False)
+                return
+            self._is_recording = True
+            self.chat_widget.set_voice_recording(True)
+            asyncio.create_task(self._start_gemini_session(google_key))
+
+    def _get_google_api_key(self):
+        """Retrieve Google API key from keyring or config."""
+        from src.utils.secure_storage import SecureStorage
+
+        key = SecureStorage.get_google_api_key()
+        if key:
+            return key
+        if self.orchestrator.config.google_api_key:
+            return self.orchestrator.config.google_api_key
+        return None
+
+    async def _start_gemini_session(self, api_key: str):
+        """Start full-duplex Gemini Live voice session."""
+        import sounddevice as sd
+        from src.api.gemini_live_client import (
+            GeminiLiveClient,
+            GeminiLiveConfig,
+            GeminiLiveState,
+        )
+
+        try:
+            self.sidebar.set_status("● Connecting to Gemini Live...")
+            self.chat_widget.voice_indicator.setText("🐆  Connecting...")
+            self.chat_widget.voice_indicator.setVisible(True)
+
+            config = GeminiLiveConfig()
+            self._gemini_client = GeminiLiveClient(api_key, config)
+
+            # Wire state changes to UI updates
+            self._gemini_client.on_state_change(self._on_gemini_state_change)
+
+            await self._gemini_client.connect()
+
+            # Update UI for active state
+            self.chat_widget.voice_indicator.setText(
+                "🐆  Gemini Live active — speak naturally, click mic to stop"
+            )
+            self.sidebar.set_status("● Gemini Live active")
+
+            # Start mic input stream (16kHz, mono, int16)
+            chunk_samples = int(
+                config.input_sample_rate * config.chunk_duration_ms / 1000
+            )
+            audio_queue = asyncio.Queue()
+
+            def mic_callback(indata, frames, time_info, status):
+                if status:
+                    logger.warning(f"Mic status: {status}")
+                audio_queue.put_nowait(indata.copy().flatten())
+
+            self._mic_stream = sd.InputStream(
+                samplerate=config.input_sample_rate,
+                channels=config.channels,
+                dtype="int16",
+                blocksize=chunk_samples,
+                callback=mic_callback,
+            )
+            self._mic_stream.start()
+
+            # Register OCR text callback if Gemini screen sharing is enabled
+            if (
+                self.orchestrator.config.screen_capture_gemini
+                and self._screen_service.is_available
+            ):
+                def _on_ocr_text(text: str):
+                    if self._gemini_client and self._is_recording:
+                        asyncio.create_task(
+                            self._gemini_client.send_text(
+                                f"[Real-time screen context]: {text}"
+                            )
+                        )
+
+                self._screen_ocr_callback = _on_ocr_text
+                self._screen_service.on_ocr_text(_on_ocr_text)
+
+            # Launch send + play + OCR tasks concurrently
+            send_task = asyncio.create_task(
+                self._gemini_send_loop(audio_queue)
+            )
+            play_task = asyncio.create_task(
+                self._gemini_play_loop(config.output_sample_rate)
+            )
+
+            tasks = [send_task, play_task]
+
+            # Add OCR loop if screen sharing enabled
+            if (
+                self.orchestrator.config.screen_capture_gemini
+                and self._screen_service.is_available
+            ):
+                ocr_task = asyncio.create_task(self._gemini_ocr_loop())
+                tasks.append(ocr_task)
+
+            self._gemini_session_task = asyncio.gather(
+                *tasks, return_exceptions=True
+            )
+
+            # Wait until session ends (user clicks stop or error)
+            await self._gemini_session_task
+
+        except Exception as e:
+            logger.error(f"Gemini Live session error: {e}")
+            error_msg = str(e)
+            if "not installed" in error_msg:
+                self.chat_widget.add_message(
+                    "google-genai package not installed. "
+                    "Run: pip install google-genai",
+                    is_user=False,
+                )
+            elif "Invalid Google API key" in error_msg:
+                self.chat_widget.add_message(
+                    "Invalid Google API key. Please update it in Settings.",
+                    is_user=False,
+                )
+            elif "PortAudio" in error_msg or "sounddevice" in error_msg:
+                self.chat_widget.add_message(
+                    "Microphone access denied or unavailable. "
+                    "Please check your system audio settings.",
+                    is_user=False,
+                )
+            else:
+                self.chat_widget.add_message(
+                    f"Voice session error: {error_msg}",
+                    is_user=False,
+                )
+        finally:
+            await self._cleanup_gemini()
+            self._is_recording = False
+            self.chat_widget.set_voice_recording(False)
+            self._update_status()
+
+    async def _gemini_send_loop(self, audio_queue: asyncio.Queue):
+        """Continuously send mic audio to Gemini Live."""
+        from src.api.gemini_live_client import GeminiLiveState
+
+        while self._is_recording and self._gemini_client:
+            if self._gemini_client.state != GeminiLiveState.ACTIVE:
+                break
+            try:
+                chunk = await asyncio.wait_for(audio_queue.get(), timeout=0.2)
+                await self._gemini_client.send_audio(chunk)
+            except asyncio.TimeoutError:
+                continue
+            except Exception as e:
+                logger.error(f"Gemini send loop error: {e}")
+                break
+
+    async def _gemini_play_loop(self, output_sample_rate: int):
+        """Continuously play audio received from Gemini Live."""
+        import sounddevice as sd
+        from src.api.gemini_live_client import GeminiLiveState
+
+        while self._is_recording and self._gemini_client:
+            if self._gemini_client.state != GeminiLiveState.ACTIVE:
+                break
+            try:
+                async for audio_chunk in self._gemini_client.receive_audio():
+                    if not self._is_recording:
+                        break
+                    # Play audio chunk (blocking call wrapped in executor)
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(
+                        None,
+                        lambda c=audio_chunk, sr=output_sample_rate: sd.play(
+                            c, sr, blocking=True
+                        ),
+                    )
+            except Exception as e:
+                logger.error(f"Gemini play loop error: {e}")
+                break
+
+    async def _gemini_ocr_loop(self):
+        """Periodically capture screen, run OCR via NVIDIA, inject text into Gemini."""
+        import base64 as b64_mod
+
+        from src.api.gemini_live_client import GeminiLiveState
+
+        while self._is_recording and self._gemini_client:
+            if self._gemini_client.state != GeminiLiveState.ACTIVE:
+                break
+
+            # Only capture when app is in background
+            if not self._app_in_background:
+                await asyncio.sleep(1)
+                continue
+
+            try:
+                # Capture screenshot in background thread
+                frame = await asyncio.to_thread(
+                    self._screen_service.capture_once,
+                    self._screen_service.monitor,
+                )
+                if frame is None:
+                    await asyncio.sleep(self._screen_service.interval)
+                    continue
+
+                # Run OCR via NVIDIA NIM vision model
+                screen_b64 = b64_mod.b64encode(frame).decode("ascii")
+                ocr_text = await self.orchestrator.extract_text_from_screen(screen_b64)
+
+                if ocr_text:
+                    # Dedup + fire callbacks (sends to Gemini via registered callback)
+                    self._screen_service.set_ocr_text(ocr_text)
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Gemini OCR loop error: {e}")
+
+            await asyncio.sleep(self._screen_service.interval)
+
+    async def _stop_gemini_session(self):
+        """Stop Gemini Live session gracefully."""
+        self._is_recording = False
+        if self._gemini_session_task and not self._gemini_session_task.done():
+            self._gemini_session_task.cancel()
+            try:
+                await self._gemini_session_task
+            except asyncio.CancelledError:
+                pass
+        await self._cleanup_gemini()
+
+    async def _cleanup_gemini(self):
+        """Clean up all Gemini Live resources."""
+        # Unregister screen frame callback (legacy)
+        if self._screen_frame_callback:
+            self._screen_service.remove_frame_callback(self._screen_frame_callback)
+            self._screen_frame_callback = None
+
+        # Unregister OCR text callback
+        if self._screen_ocr_callback:
+            self._screen_service.remove_ocr_callback(self._screen_ocr_callback)
+            self._screen_ocr_callback = None
+
+        if self._mic_stream:
+            try:
+                self._mic_stream.stop()
+                self._mic_stream.close()
+            except Exception:
+                pass
+            self._mic_stream = None
+
+        if self._gemini_client:
+            try:
+                await self._gemini_client.disconnect()
+            except Exception:
+                pass
+            self._gemini_client = None
+
+        self._gemini_session_task = None
+        self.chat_widget.voice_indicator.setVisible(False)
+
+    def _on_gemini_state_change(self, state):
+        """Handle Gemini Live state transitions for UI updates."""
+        from src.api.gemini_live_client import GeminiLiveState
+
+        if state == GeminiLiveState.CONNECTING:
+            self.sidebar.set_status("● Connecting to Gemini...")
+        elif state == GeminiLiveState.ACTIVE:
+            self.sidebar.set_status("● Gemini Live active")
+        elif state == GeminiLiveState.ERROR:
+            error = (
+                self._gemini_client.error_message
+                if self._gemini_client
+                else "Unknown"
+            )
+            self.sidebar.set_status(f"Voice error: {str(error)[:30]}")
+        elif state == GeminiLiveState.IDLE:
+            self._update_status()
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Background detection & screen capture
+    # ─────────────────────────────────────────────────────────────────────
+
+    def changeEvent(self, event):
+        """Detect window minimize / restore for background mode."""
+        if event.type() == QEvent.Type.WindowStateChange:
+            is_bg = self.isMinimized() or not self.isActiveWindow()
+            self._on_app_background_changed(is_bg)
+        super().changeEvent(event)
+
+    def _on_app_state_changed(self, state):
+        """Handle application-wide focus changes."""
+        is_bg = state != Qt.ApplicationState.ApplicationActive
+        self._on_app_background_changed(is_bg)
+
+    def _on_app_background_changed(self, is_background: bool):
+        """Update screen capture when app foreground/background state changes."""
+        if is_background == self._app_in_background:
+            return  # no change
+        self._app_in_background = is_background
+        self._screen_service.set_app_in_background(is_background)
+
+        config = self.orchestrator.config
+        screen_enabled = config.screen_capture_vision or config.screen_capture_gemini
+
+        if not screen_enabled:
+            return
+
+        if is_background:
+            self.sidebar.set_status("● Screen reading: ACTIVE")
+        else:
+            # Show brief pause notice then revert to normal status
+            if self._is_recording:
+                self.sidebar.set_status("● Gemini Live active (screen paused)")
+            else:
+                self.sidebar.set_status("● Screen reading: PAUSED")
+                QTimer.singleShot(2000, self._update_status)
+
+    def _reload_screen_settings(self):
+        """Refresh screen service settings from config (called after settings save)."""
+        config = self.orchestrator.config
+        self._screen_service.vision_enabled = config.screen_capture_vision
+        self._screen_service.gemini_enabled = config.screen_capture_gemini
+        self._screen_service.monitor = config.screen_capture_monitor
+        self._screen_service.interval = config.screen_capture_interval
 
     def closeEvent(self, event):
         """Handle window close."""
+        self._screen_service.stop()
+        if self._gemini_client:
+            asyncio.create_task(self._cleanup_gemini())
         asyncio.create_task(self.orchestrator.close())
         event.accept()

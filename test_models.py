@@ -2,10 +2,22 @@
 import asyncio
 import httpx
 import json
+import os
+import sys
 import time
 
-API_KEY = "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"
-BASE_URL = "https://integrate.api.nvidia.com/v1"
+from dotenv import load_dotenv
+
+load_dotenv()
+
+API_KEY = os.getenv("NVIDIA_API_KEY")
+if not API_KEY or API_KEY == "your_api_key_here":
+    print("ERROR: Set NVIDIA_API_KEY in your .env file first.")
+    print("  1. Copy .env.example to .env")
+    print("  2. Replace 'your_api_key_here' with your actual NVIDIA API key")
+    sys.exit(1)
+
+BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
 
 
 async def discover_models(client: httpx.AsyncClient) -> list:

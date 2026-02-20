@@ -11,7 +11,7 @@ A production-ready, native Python desktop application that leverages NVIDIA's AI
 - **Professional UI**: Native PyQt6 interface with dark theme
 - **NVIDIA NIM Integration**: Support for Kimi and Llama models
 
-## Quick Start
+## Getting Started
 
 ### Prerequisites
 
@@ -32,13 +32,25 @@ pip install poetry
 poetry install
 ```
 
-3. Run the application:
+3. Set up your environment variables:
+```bash
+cp .env.example .env
+```
+Then open `.env` and replace `your_api_key_here` with your actual NVIDIA API key:
+```
+NVIDIA_API_KEY=nvapi-your-actual-key-here
+```
+
+4. Run the application:
 ```bash
 poetry run python main.py
 ```
 
-### Configuration
+> **Note:** The `.env` file is gitignored and will never be committed. Each developer must create their own `.env` from `.env.example`.
 
+### Alternative: Configure via Settings UI
+
+Instead of editing `.env`, you can also set your API key through the app:
 1. Launch the application
 2. Click "Settings" in the sidebar
 3. Enter your NVIDIA API key
