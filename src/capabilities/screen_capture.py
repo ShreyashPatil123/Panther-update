@@ -158,6 +158,38 @@ class ScreenCaptureService:
             logger.error(f"Screen capture failed: {e}")
             return None
 
+    def force_capture(self, monitor_index: Optional[int] = None) -> Optional[bytes]:
+        """Capture a screenshot on demand regardless of foreground/background state.
+        Returns JPEG bytes or None on failure.
+        """
+        if not self._mss_available:
+            return None
+
+        try:
+            import mss
+            from PIL import Image
+
+            idx = monitor_index if monitor_index is not None else self._monitor
+
+            with mss.mss() as sct:
+                monitors = sct.monitors
+                mon = monitors[min(idx + 1, len(monitors) - 1)]
+                screenshot = sct.grab(mon)
+
+                img = Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
+
+                # Resize for API efficiency (max 1024px wide)
+                if img.width > 1024:
+                    ratio = 1024 / img.width
+                    img = img.resize((1024, int(img.height * ratio)), Image.LANCZOS)
+
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG", quality=70)
+                return buf.getvalue()
+        except Exception as e:
+            logger.error(f"Force screen capture failed: {e}")
+            return None
+
     def get_latest_frame(self) -> Optional[bytes]:
         """Get the most recent captured frame (JPEG bytes)."""
         if not self._app_in_background:

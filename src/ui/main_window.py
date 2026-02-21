@@ -86,7 +86,6 @@ class Sidebar(QWidget):
         self.chat_btn = self._create_nav_button("💬  Chat", True)
         self.memory_btn = self._create_nav_button("🧠  Memory", False)
         self.tasks_btn = self._create_nav_button("☑  Tasks", False)
-
         for btn in [self.chat_btn, self.memory_btn, self.tasks_btn]:
             layout.addWidget(btn)
 
