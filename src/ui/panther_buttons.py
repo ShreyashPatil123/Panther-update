@@ -235,10 +235,10 @@ class PantherMicButton(QPushButton):
         super().leaveEvent(event)
 
     def nextCheckState(self):
-        """Override to play roar on check."""
-        super().nextCheckState()
-        if self.isChecked():
-            self._play_roar()
+        """Push-to-talk: checked state is controlled externally via
+        setChecked() from the MainWindow pressed/released handlers.
+        Prevent QPushButton from auto-toggling on click."""
+        pass
 
     def paintEvent(self, event):
         p = QPainter(self)

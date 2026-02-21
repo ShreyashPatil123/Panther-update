@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     window_height: int = 900
     sidebar_width: int = 250
 
+    # Voice Activity Detection
+    vad_enabled: bool = Field(default=True, alias="VAD_ENABLED")
+
     # Feature flags
     speech_enabled: bool = True
     max_retries: int = 3

@@ -6,7 +6,12 @@
       "Bash(poetry run python:*)",
       "Bash(pip install:*)",
       "Bash(python:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(wc:*)",
+      "WebFetch(domain:googleapis.github.io)",
+      "Bash(poetry add:*)",
+      "Bash(poetry install:*)",
+      "Bash(poetry run pip:*)"
     ]
   }
 }
