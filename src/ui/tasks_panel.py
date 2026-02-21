@@ -44,7 +44,7 @@ class TasksPanel(QWidget):
         header_layout.addStretch()
 
         self.active_count = QLabel("0 active")
-        self.active_count.setStyleSheet("color: #76b900; font-size: 13px;")
+        self.active_count.setStyleSheet("color: #FF6B35; font-size: 13px;")
         header_layout.addWidget(self.active_count)
         layout.addLayout(header_layout)
 

@@ -1,18 +1,27 @@
-"""Custom UI widgets for the application."""
-from PyQt6.QtCore import Qt, QTimer
+"""Custom UI widgets — panther orange resin theme."""
+from PyQt6.QtCore import Qt, QTimer, QUrl
+from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QSizePolicy,
     QSpacerItem,
+    QTextBrowser,
     QVBoxLayout,
     QWidget,
 )
 
+from src.ui.chat_renderer import render_markdown, render_user_message
+
 
 class MessageBubble(QFrame):
-    """Message bubble widget for chat."""
+    """Message bubble widget for chat.
+
+    User messages: styled plain-text bubble (right-aligned).
+    AI messages: rich HTML via QTextBrowser with markdown, code, thinking (left-aligned).
+    """
 
     def __init__(self, text: str, is_user: bool = False, parent=None):
         super().__init__(parent)
@@ -22,81 +31,143 @@ class MessageBubble(QFrame):
 
     def _setup_ui(self):
         """Setup message bubble UI."""
-        # Set object name for styling
         self.setObjectName("userMessage" if self.is_user else "aiMessage")
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setStyleSheet("background: transparent;")
 
-        # Main layout
-        main_layout = QHBoxLayout()
+        main_layout = QHBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(8)
 
-        # Spacer for alignment
         if self.is_user:
+            # ── User message: right-aligned pill ──
             main_layout.addSpacerItem(
                 QSpacerItem(100, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
             )
 
-        # Message container
-        self.container = QFrame()
-        self.container.setObjectName("userMessage" if self.is_user else "aiMessage")
-        self.container.setStyleSheet(
-            f"""
-            QFrame#userMessage {{
-                background-color: #2d3748;
-                border-radius: 12px;
-                padding: 12px;
-                max-width: 700px;
-            }}
-            QFrame#aiMessage {{
-                background-color: #1e3a5f;
-                border-radius: 12px;
-                padding: 12px;
-                max-width: 700px;
-            }}
-        """
-        )
+            self.container = QFrame()
+            self.container.setObjectName("userMessage")
+            self.container.setStyleSheet("""
+                QFrame#userMessage {
+                    background-color: #1e1a14;
+                    border-radius: 16px;
+                    border: 1px solid #2a2218;
+                    padding: 0;
+                    max-width: 700px;
+                }
+            """)
 
-        container_layout = QVBoxLayout(self.container)
-        container_layout.setContentsMargins(12, 10, 12, 10)
-        container_layout.setSpacing(4)
+            container_layout = QVBoxLayout(self.container)
+            container_layout.setContentsMargins(16, 12, 16, 12)
+            container_layout.setSpacing(0)
 
-        # Message text
-        self.label = QLabel(self.text)
-        self.label.setWordWrap(True)
-        self.label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-        )
-        self.label.setStyleSheet(
-            f"""
-            QLabel {{
-                color: {'white' if self.is_user else '#e0e0e0'};
-                font-size: 14px;
-                line-height: 1.5;
-            }}
-        """
-        )
-        container_layout.addWidget(self.label)
+            self.label = QLabel()
+            self.label.setWordWrap(True)
+            self.label.setTextFormat(Qt.TextFormat.RichText)
+            self.label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            self.label.setStyleSheet("""
+                QLabel {
+                    color: #f0ece8;
+                    font-size: 14px;
+                    line-height: 1.5;
+                    background: transparent;
+                }
+            """)
+            self.label.setText(render_user_message(self.text))
+            container_layout.addWidget(self.label)
 
-        main_layout.addWidget(self.container)
+            main_layout.addWidget(self.container)
 
-        # Spacer for alignment
-        if not self.is_user:
-            main_layout.addSpacerItem(
-                QSpacerItem(100, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        else:
+            # ── AI message: full-width rich HTML ──
+            self.container = QFrame()
+            self.container.setObjectName("aiMessage")
+            self.container.setStyleSheet("""
+                QFrame#aiMessage {
+                    background: transparent;
+                    border: none;
+                    padding: 0;
+                }
+            """)
+
+            container_layout = QVBoxLayout(self.container)
+            container_layout.setContentsMargins(8, 4, 8, 4)
+            container_layout.setSpacing(0)
+
+            # Role label — orange resin accent
+            role_label = QLabel("✦ Assistant")
+            role_label.setStyleSheet("""
+                QLabel {
+                    color: #FF6B35;
+                    font-size: 12px;
+                    font-weight: bold;
+                    margin-bottom: 4px;
+                    background: transparent;
+                }
+            """)
+            container_layout.addWidget(role_label)
+
+            # Rich text browser
+            self.text_browser = QTextBrowser()
+            self.text_browser.setOpenExternalLinks(False)
+            self.text_browser.anchorClicked.connect(
+                lambda url: QDesktopServices.openUrl(url)
+            )
+            self.text_browser.setVerticalScrollBarPolicy(
+                Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+            )
+            self.text_browser.setHorizontalScrollBarPolicy(
+                Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+            )
+            self.text_browser.setStyleSheet("""
+                QTextBrowser {
+                    background: transparent;
+                    border: none;
+                    color: #e8e0d8;
+                    font-family: 'Inter', 'Segoe UI', sans-serif;
+                    font-size: 14px;
+                    selection-background-color: #FF6B35;
+                }
+            """)
+            self.text_browser.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
             )
 
-        self.setLayout(main_layout)
-        self.setFrameShape(QFrame.Shape.NoFrame)
-        self.setStyleSheet("background: transparent;")
+            # Set initial content
+            if self.text:
+                self.text_browser.setHtml(render_markdown(self.text))
+
+            # Auto-resize to content
+            self.text_browser.document().contentsChanged.connect(self._adjust_height)
+            self._adjust_height()
+
+            container_layout.addWidget(self.text_browser)
+
+            main_layout.addWidget(self.container)
+
+            # Right spacer for AI messages (leave some right margin)
+            main_layout.addSpacerItem(
+                QSpacerItem(40, 0, QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum)
+            )
+
+    def _adjust_height(self):
+        """Auto-resize QTextBrowser to fit content without scrollbar."""
+        if hasattr(self, "text_browser"):
+            doc_height = self.text_browser.document().size().toSize().height()
+            self.text_browser.setFixedHeight(max(doc_height + 10, 30))
 
     def set_text(self, text: str):
         """Update message text."""
         self.text = text
-        self.label.setText(text)
+        if self.is_user:
+            self.label.setText(render_user_message(text))
+        else:
+            self.text_browser.setHtml(render_markdown(text))
+            self._adjust_height()
 
 
 class TypingIndicator(QFrame):
-    """Typing indicator with animated dots."""
+    """Typing indicator with animated orange dots."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -109,13 +180,14 @@ class TypingIndicator(QFrame):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(12, 8, 12, 8)
 
-        # Container
+        # Container — warm dark with orange tint
         container = QFrame()
         container.setStyleSheet(
             """
             QFrame {
-                background-color: #1e3a5f;
-                border-radius: 12px;
+                background-color: #1a1510;
+                border-radius: 14px;
+                border: 1px solid #2a2218;
                 padding: 8px 16px;
             }
         """
@@ -123,9 +195,9 @@ class TypingIndicator(QFrame):
 
         container_layout = QHBoxLayout(container)
         container_layout.setContentsMargins(12, 8, 12, 8)
-        container_layout.setSpacing(4)
+        container_layout.setSpacing(6)
 
-        # Dots
+        # Dots — orange resin
         self.dot_labels = []
         for i in range(3):
             dot = QLabel("")
@@ -133,7 +205,7 @@ class TypingIndicator(QFrame):
             dot.setStyleSheet(
                 f"""
                 QLabel {{
-                    background-color: {'#76b900' if i == 0 else '#555'};
+                    background-color: {'#FF6B35' if i == 0 else '#3a2818'};
                     border-radius: 4px;
                 }}
             """
@@ -154,7 +226,7 @@ class TypingIndicator(QFrame):
         self.timer.start(400)
 
     def _animate(self):
-        """Animate typing dots."""
+        """Animate typing dots with orange resin glow."""
         self._dots = (self._dots + 1) % 4
 
         for i, dot in enumerate(self.dot_labels):
@@ -162,7 +234,7 @@ class TypingIndicator(QFrame):
                 dot.setStyleSheet(
                     """
                     QLabel {
-                        background-color: #76b900;
+                        background-color: #FF6B35;
                         border-radius: 4px;
                     }
                 """
@@ -171,7 +243,7 @@ class TypingIndicator(QFrame):
                 dot.setStyleSheet(
                     """
                     QLabel {
-                        background-color: #555;
+                        background-color: #3a2818;
                         border-radius: 4px;
                     }
                 """
@@ -205,23 +277,23 @@ class SessionItem(QWidget):
 
         # Title
         self.title_label = QLabel(self.title)
-        self.title_label.setStyleSheet("font-weight: 500; font-size: 13px;")
+        self.title_label.setStyleSheet("font-weight: 500; font-size: 13px; color: #f0ece8;")
         self.title_label.setWordWrap(True)
         layout.addWidget(self.title_label)
 
         # Timestamp
         self.time_label = QLabel(self.timestamp)
-        self.time_label.setStyleSheet("color: #888; font-size: 11px;")
+        self.time_label.setStyleSheet("color: #8a8078; font-size: 11px;")
         layout.addWidget(self.time_label)
 
         self.setStyleSheet(
             """
             QWidget {
                 background: transparent;
-                border-radius: 6px;
+                border-radius: 8px;
             }
             QWidget:hover {
-                background: #3d3d3d;
+                background: #1a1712;
             }
         """
         )
@@ -241,9 +313,9 @@ class CodeBlock(QFrame):
         self.setStyleSheet(
             """
             QFrame {
-                background-color: #1a1a1a;
-                border-radius: 8px;
-                border: 1px solid #333;
+                background-color: #0f0e0c;
+                border-radius: 10px;
+                border: 1px solid #2a2218;
             }
         """
         )
@@ -257,7 +329,7 @@ class CodeBlock(QFrame):
 
         if self.language:
             lang_label = QLabel(self.language)
-            lang_label.setStyleSheet("color: #888; font-size: 12px;")
+            lang_label.setStyleSheet("color: #FF6B35; font-size: 12px; font-weight: 600;")
             header.addWidget(lang_label)
 
         header.addStretch()
@@ -268,15 +340,16 @@ class CodeBlock(QFrame):
             """
             QPushButton {
                 background: transparent;
-                color: #888;
-                border: 1px solid #444;
-                border-radius: 4px;
+                color: #8a8078;
+                border: 1px solid #2a2218;
+                border-radius: 5px;
                 padding: 4px 8px;
                 font-size: 11px;
             }
             QPushButton:hover {
-                background: #333;
-                color: #fff;
+                background: #1a1510;
+                color: #FFB347;
+                border-color: #FF6B35;
             }
         """
         )
@@ -294,8 +367,8 @@ class CodeBlock(QFrame):
         self.code_label.setStyleSheet(
             """
             QLabel {
-                color: #e0e0e0;
-                font-family: 'Consolas', 'Monaco', monospace;
+                color: #e8e0d8;
+                font-family: 'Cascadia Code', 'Consolas', 'Monaco', monospace;
                 font-size: 13px;
                 line-height: 1.5;
             }

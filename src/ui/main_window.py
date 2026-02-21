@@ -1,12 +1,14 @@
-"""Main window for NVIDIA AI Agent."""
+"""Main window for NVIDIA AI Agent — panther orange resin theme."""
 import asyncio
-from typing import Optional
+import os
+from typing import Dict, List, Optional
 
 import httpx
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import Qt, QEvent, QTimer, pyqtSignal, pyqtSlot
 from PyQt6.QtWidgets import (
     QApplication,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -24,104 +26,114 @@ from PyQt6.QtWidgets import (
 from loguru import logger
 
 from src.core.agent import AgentOrchestrator
+from src.core.model_router import TaskCategory, get_all_presets, get_task_preset
 from src.ui.settings_dialog import SettingsDialog
 from src.ui.widgets import MessageBubble, TypingIndicator
+from src.ui.panther_buttons import PantherSendButton, PantherMicButton, PantherAttachButton
 
 
 class Sidebar(QWidget):
-    """Sidebar widget for navigation."""
+    """Sidebar — minimal, premium navigation."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("sidebar")
-        self.setFixedWidth(260)
+        self.setFixedWidth(240)
         self._setup_ui()
 
     def _setup_ui(self):
-        """Setup sidebar UI."""
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
+        layout.setContentsMargins(14, 16, 14, 14)
+        layout.setSpacing(6)
 
-        # App title
-        title = QLabel("NVIDIA AI Agent")
-        title.setObjectName("title")
-        title.setStyleSheet("font-size: 18px; font-weight: bold; padding: 8px;")
-        layout.addWidget(title)
-
-        # New chat button
-        self.new_chat_btn = QPushButton("+ New Chat")
-        self.new_chat_btn.setObjectName("secondary")
-        self.new_chat_btn.setStyleSheet(
-            "QPushButton { padding: 10px; font-weight: bold; }"
+        # ── Brand / logo area ──
+        brand = QLabel("⬢ NVIDIA AI")
+        brand.setObjectName("title")
+        brand.setStyleSheet(
+            "font-size: 15px; font-weight: 700; color: #FF6B35; "
+            "padding: 4px 6px; letter-spacing: -0.5px;"
         )
+        layout.addWidget(brand)
+
+        layout.addSpacing(8)
+
+        # ── New Chat button ──
+        self.new_chat_btn = QPushButton("＋  New chat")
+        self.new_chat_btn.setObjectName("secondary")
+        self.new_chat_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.new_chat_btn.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #f0ece8;
+                border: 1px solid #2a2218;
+                border-radius: 10px;
+                padding: 10px 14px;
+                font-weight: 600;
+                font-size: 13px;
+                text-align: left;
+            }
+            QPushButton:hover {
+                background: #1a1510;
+                border-color: #FF6B35;
+                color: #ffffff;
+            }
+        """)
         layout.addWidget(self.new_chat_btn)
 
-        # Separator
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setStyleSheet("color: #404040; margin: 8px 0;")
-        layout.addWidget(separator)
+        layout.addSpacing(4)
 
-        # Navigation buttons
-        nav_label = QLabel("NAVIGATION")
-        nav_label.setStyleSheet("color: #888; font-size: 11px; padding: 8px;")
-        layout.addWidget(nav_label)
+        # ── Navigation ──
+        self.chat_btn = self._create_nav_button("💬  Chat", True)
+        self.memory_btn = self._create_nav_button("🧠  Memory", False)
+        self.tasks_btn = self._create_nav_button("☑  Tasks", False)
 
-        self.chat_btn = self._create_nav_button("💬 Chat", True)
-        self.files_btn = self._create_nav_button("📁 Files", False)
-        self.browser_btn = self._create_nav_button("🌐 Browser", False)
-        self.memory_btn = self._create_nav_button("🧠 Memory", False)
-        self.tasks_btn = self._create_nav_button("📋 Tasks", False)
+        for btn in [self.chat_btn, self.memory_btn, self.tasks_btn]:
+            layout.addWidget(btn)
 
-        layout.addWidget(self.chat_btn)
-        layout.addWidget(self.files_btn)
-        layout.addWidget(self.browser_btn)
-        layout.addWidget(self.memory_btn)
-        layout.addWidget(self.tasks_btn)
+        # ── Separator ──
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet("color: #2a2218; max-height: 1px; margin: 8px 0;")
+        layout.addWidget(sep)
 
-        # Separator
-        separator2 = QFrame()
-        separator2.setFrameShape(QFrame.Shape.HLine)
-        separator2.setStyleSheet("color: #404040; margin: 8px 0;")
-        layout.addWidget(separator2)
-
-        # Settings button
-        self.settings_btn = self._create_nav_button("⚙ Settings", False)
+        # ── Settings ──
+        self.settings_btn = self._create_nav_button("⚙  Settings", False)
         layout.addWidget(self.settings_btn)
 
-        # Spacer
+        # ── Spacer → pushes status to bottom ──
         layout.addStretch()
 
-        # Model indicator
+        # ── Model indicator ──
         self.model_label = QLabel("")
-        self.model_label.setStyleSheet("color: #666; font-size: 11px; padding: 4px 8px;")
         self.model_label.setWordWrap(True)
+        self.model_label.setStyleSheet(
+            "color: #5a5248; font-size: 11px; padding: 2px 6px;"
+        )
         layout.addWidget(self.model_label)
 
-        # Status label
-        self.status_label = QLabel("Ready")
+        # ── Status ──
+        self.status_label = QLabel("● Ready")
         self.status_label.setStyleSheet(
-            "color: #76b900; font-size: 12px; padding: 8px;"
+            "color: #FF6B35; font-size: 11px; padding: 4px 6px; font-weight: 500;"
         )
         layout.addWidget(self.status_label)
 
     def _create_nav_button(self, text: str, checked: bool) -> QPushButton:
-        """Create a navigation button."""
         btn = QPushButton(text)
         btn.setObjectName("sidebarButton")
         btn.setCheckable(True)
         btn.setChecked(checked)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
         return btn
 
     def set_status(self, status: str, is_error: bool = False):
-        """Update status label."""
         self.status_label.setText(status)
-        color = "#ff5252" if is_error else "#76b900"
-        self.status_label.setStyleSheet(f"color: {color}; font-size: 12px; padding: 8px;")
+        color = "#FF4500" if is_error else "#FF6B35"
+        self.status_label.setStyleSheet(
+            f"color: {color}; font-size: 11px; padding: 4px 6px; font-weight: 500;"
+        )
 
     def set_model(self, model: str):
-        """Show current model name."""
         short = model.split("/")[-1] if "/" in model else model
         self.model_label.setText(f"Model: {short}")
 
@@ -130,13 +142,16 @@ class ChatWidget(QWidget):
     """Chat interface widget."""
 
     message_sent = pyqtSignal(str)
+    message_sent_with_attachments = pyqtSignal(str, list)  # (text, [filepaths])
     voice_requested = pyqtSignal()
+    task_selected = pyqtSignal(str)  # emits TaskCategory value string
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._setup_ui()
         self._is_typing = False
         self._current_ai_bubble: Optional[MessageBubble] = None
+        self._pending_attachments: List[str] = []  # file paths awaiting send
 
     def _setup_ui(self):
         """Setup chat UI."""
@@ -154,8 +169,8 @@ class ChatWidget(QWidget):
         # Container for messages
         self.messages_container = QWidget()
         self.messages_layout = QVBoxLayout(self.messages_container)
-        self.messages_layout.setContentsMargins(20, 20, 20, 20)
-        self.messages_layout.setSpacing(16)
+        self.messages_layout.setContentsMargins(28, 24, 28, 24)
+        self.messages_layout.setSpacing(20)
         self.messages_layout.addStretch()
 
         scroll.setWidget(self.messages_container)
@@ -164,27 +179,141 @@ class ChatWidget(QWidget):
         # Store scroll widget reference
         self.scroll_area = scroll
 
-        # Input area
+        # ── Task preset pills (above input) ─────────────────────────────
+        task_strip = QFrame()
+        task_strip.setObjectName("taskStrip")
+        task_strip.setStyleSheet("""
+            QFrame#taskStrip {
+                background: transparent;
+                border: none;
+                padding: 0;
+            }
+        """)
+        task_layout = QHBoxLayout(task_strip)
+        task_layout.setContentsMargins(32, 6, 32, 2)
+        task_layout.setSpacing(5)
+
+        self._task_buttons: Dict[str, QPushButton] = {}
+        self._active_task: Optional[str] = None
+
+        for category, preset in get_all_presets().items():
+            btn = QPushButton(f"{preset.emoji} {preset.label}")
+            btn.setCheckable(True)
+            btn.setToolTip(f"{preset.description}\nModel: {preset.model}")
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet("""
+                QPushButton {
+                    background: transparent;
+                    color: #8a8078;
+                    border: 1px solid #2a2218;
+                    border-radius: 12px;
+                    padding: 4px 10px;
+                    font-size: 11px;
+                    min-height: 22px;
+                }
+                QPushButton:hover {
+                    background: #1a1510;
+                    color: #f0ece8;
+                    border-color: #FF6B35;
+                }
+                QPushButton:checked {
+                    background: rgba(255, 107, 53, 0.15);
+                    color: #FF6B35;
+                    border-color: #FF6B35;
+                    font-weight: 600;
+                }
+            """)
+            btn.clicked.connect(
+                lambda checked, cat=category.value: self._on_task_btn_clicked(cat)
+            )
+            task_layout.addWidget(btn)
+            self._task_buttons[category.value] = btn
+
+        # Clear button
+        clear_btn = QPushButton("✕")
+        clear_btn.setToolTip("Reset to default model")
+        clear_btn.setFixedSize(24, 24)
+        clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        clear_btn.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #5a5248;
+                border: 1px solid #2a2218;
+                border-radius: 12px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background: rgba(255, 69, 0, 0.1);
+                color: #FF4500;
+                border-color: #FF4500;
+            }
+        """)
+        clear_btn.clicked.connect(lambda: self._on_task_btn_clicked(None))
+        task_layout.addWidget(clear_btn)
+        task_layout.addStretch()
+        layout.addWidget(task_strip)
+
+        # ── Attachment preview strip (hidden by default) ────────────────
+        self._attachment_strip = QFrame()
+        self._attachment_strip.setStyleSheet("""
+            QFrame {
+                background: #0f0e0c;
+                border: 1px solid #2a2218;
+                border-bottom: none;
+                border-radius: 12px 12px 0 0;
+                padding: 4px 8px;
+            }
+        """)
+        self._attachment_layout = QHBoxLayout(self._attachment_strip)
+        self._attachment_layout.setContentsMargins(12, 6, 12, 6)
+        self._attachment_layout.setSpacing(6)
+        self._attachment_layout.addStretch()
+        self._attachment_strip.setVisible(False)
+        layout.addWidget(self._attachment_strip)
+
+        # ── Input area ────────────────────────────────────────────────────
         input_frame = QFrame()
         input_frame.setObjectName("inputArea")
+        input_frame.setStyleSheet("""
+            QFrame#inputArea {
+                background: transparent;
+                border: none;
+            }
+        """)
         input_layout = QHBoxLayout(input_frame)
-        input_layout.setContentsMargins(20, 16, 20, 16)
+        input_layout.setContentsMargins(28, 8, 28, 16)
         input_layout.setSpacing(8)
 
-        # Voice button
-        self.voice_btn = QPushButton("🎤")
-        self.voice_btn.setObjectName("secondary")
-        self.voice_btn.setFixedSize(44, 40)
-        self.voice_btn.setToolTip("Hold to speak (push-to-talk)")
-        self.voice_btn.setCheckable(True)
+        # Attach button (panther eye)
+        self.attach_btn = PantherAttachButton()
+        self.attach_btn.clicked.connect(self._on_attach_clicked)
+        input_layout.addWidget(self.attach_btn)
+
+        # Voice button (panther mic)
+        self.voice_btn = PantherMicButton()
         self.voice_btn.clicked.connect(self._on_voice_clicked)
         input_layout.addWidget(self.voice_btn)
 
         # Message input
         self.message_input = QTextEdit()
         self.message_input.setObjectName("messageInput")
-        self.message_input.setPlaceholderText("Type a message or click 🎤 to speak...")
-        self.message_input.setMaximumHeight(120)
+        self.message_input.setPlaceholderText("Message NVIDIA AI…")
+        self.message_input.setMaximumHeight(100)
+        self.message_input.setStyleSheet("""
+            QTextEdit#messageInput {
+                background-color: #0f0e0c;
+                color: #f0ece8;
+                border: 1px solid #2a2218;
+                border-radius: 14px;
+                padding: 10px 16px;
+                font-size: 14px;
+                font-family: 'Inter', 'Segoe UI', sans-serif;
+                selection-background-color: #FF6B35;
+            }
+            QTextEdit#messageInput:focus {
+                border: 1px solid #FF6B35;
+            }
+        """)
         self.message_input.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Preferred,
@@ -192,19 +321,19 @@ class ChatWidget(QWidget):
         self.message_input.keyPressEvent = self._handle_key_press
         input_layout.addWidget(self.message_input)
 
-        # Send button
-        self.send_btn = QPushButton("Send")
-        self.send_btn.setFixedSize(80, 40)
+        # Send button (panther head)
+        self.send_btn = PantherSendButton()
         self.send_btn.clicked.connect(self._send_message)
         input_layout.addWidget(self.send_btn)
 
         layout.addWidget(input_frame)
 
         # Voice recording indicator (hidden by default)
-        self.voice_indicator = QLabel("🔴 Recording... (click mic again to send)")
+        self.voice_indicator = QLabel("🐆  Recording… click mic to stop")
         self.voice_indicator.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.voice_indicator.setStyleSheet(
-            "background: #3d1a1a; color: #ff5252; padding: 8px; font-size: 13px;"
+            "background: rgba(255,107,53,0.08); color: #FF6B35; "
+            "padding: 8px; font-size: 12px; border: none;"
         )
         self.voice_indicator.setVisible(False)
         layout.addWidget(self.voice_indicator)
@@ -221,16 +350,148 @@ class ChatWidget(QWidget):
             QTextEdit.keyPressEvent(self.message_input, event)
 
     def _send_message(self):
-        """Send message."""
+        """Send message (with optional attachments)."""
         text = self.message_input.toPlainText().strip()
         if text and not self._is_typing:
-            self.message_sent.emit(text)
-            self.add_message(text, is_user=True)
+            if self._pending_attachments:
+                # Show attachment info in the user bubble
+                names = [os.path.basename(f) for f in self._pending_attachments]
+                display = text + "\n" + " ".join(f"📎 {n}" for n in names)
+                self.add_message(display, is_user=True)
+                self.message_sent_with_attachments.emit(
+                    text, list(self._pending_attachments)
+                )
+                self._clear_attachments()
+            else:
+                self.message_sent.emit(text)
+                self.add_message(text, is_user=True)
             self.message_input.clear()
+
+    # ── Attachment helpers ─────────────────────────────────────────────────
+
+    def _on_attach_clicked(self):
+        """Open file dialog to select attachments."""
+        files, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Attach Files",
+            "",
+            "All Supported Files (*.jpg *.jpeg *.png *.gif *.webp *.bmp "
+            "*.pdf *.docx *.txt *.md *.csv *.json *.py *.js *.ts *.java *.cpp "
+            "*.c *.h *.html *.css *.sql *.xml *.yaml *.yml *.toml *.log "
+            "*.mp4 *.avi *.mov *.mkv *.webm);;"
+            "Images (*.jpg *.jpeg *.png *.gif *.webp *.bmp);;"
+            "Documents (*.pdf *.docx *.txt *.md *.csv *.json);;"
+            "Code (*.py *.js *.ts *.java *.cpp *.c *.h *.html *.css *.sql);;"
+            "Videos (*.mp4 *.avi *.mov *.mkv *.webm);;"
+            "All Files (*)",
+        )
+        for filepath in files:
+            if filepath not in self._pending_attachments:
+                self._pending_attachments.append(filepath)
+                self._add_attachment_pill(filepath)
+
+    def _add_attachment_pill(self, filepath: str):
+        """Add a visual pill for an attached file."""
+        from src.core.file_processor import classify_file, FileType
+
+        name = os.path.basename(filepath)
+        ftype = classify_file(filepath)
+        icons = {
+            FileType.IMAGE: "🖼️",
+            FileType.VIDEO: "🎬",
+            FileType.DOCUMENT: "📄",
+            FileType.TEXT: "📝",
+        }
+        icon = icons.get(ftype, "📁")
+
+        pill = QFrame()
+        pill.setStyleSheet("""
+            QFrame {
+                background: #1a1510;
+                border: 1px solid #2a2218;
+                border-radius: 8px;
+                padding: 2px 6px;
+            }
+        """)
+        pill_layout = QHBoxLayout(pill)
+        pill_layout.setContentsMargins(4, 2, 4, 2)
+        pill_layout.setSpacing(4)
+
+        label = QLabel(f"{icon} {name}")
+        label.setStyleSheet(
+            "color: #b8a898; font-size: 11px; background: transparent; border: none;"
+        )
+        pill_layout.addWidget(label)
+
+        remove_btn = QPushButton("✕")
+        remove_btn.setFixedSize(16, 16)
+        remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        remove_btn.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #5a5248;
+                border: none;
+                font-size: 10px;
+            }
+            QPushButton:hover {
+                color: #FF4500;
+            }
+        """)
+        remove_btn.clicked.connect(lambda: self._remove_attachment(filepath, pill))
+        pill_layout.addWidget(remove_btn)
+
+        # Insert before the stretch at the end
+        self._attachment_layout.insertWidget(
+            self._attachment_layout.count() - 1, pill
+        )
+        self._attachment_strip.setVisible(True)
+        # Morph attach button to panther eye
+        if hasattr(self.attach_btn, 'set_has_files'):
+            self.attach_btn.set_has_files(True)
+
+    def _remove_attachment(self, filepath: str, pill: QFrame):
+        """Remove an attachment pill."""
+        if filepath in self._pending_attachments:
+            self._pending_attachments.remove(filepath)
+        pill.deleteLater()
+        if not self._pending_attachments:
+            self._attachment_strip.setVisible(False)
+            # Revert to paperclip
+            if hasattr(self.attach_btn, 'set_has_files'):
+                self.attach_btn.set_has_files(False)
+
+    def _clear_attachments(self):
+        """Remove all attachment pills after sending."""
+        self._pending_attachments.clear()
+        # Remove all pills (everything except the stretch)
+        while self._attachment_layout.count() > 1:
+            item = self._attachment_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self._attachment_strip.setVisible(False)
+        # Revert attach button to paperclip
+        if hasattr(self.attach_btn, 'set_has_files'):
+            self.attach_btn.set_has_files(False)
 
     def _on_voice_clicked(self):
         """Handle voice button click."""
         self.voice_requested.emit()
+
+    def _on_task_btn_clicked(self, category_value: Optional[str]):
+        """Handle task preset button click."""
+        # Uncheck all buttons first
+        for btn in self._task_buttons.values():
+            btn.setChecked(False)
+
+        if category_value is None or category_value == self._active_task:
+            # Clear / toggle off
+            self._active_task = None
+            self.task_selected.emit("")
+        else:
+            # Activate
+            self._active_task = category_value
+            self._task_buttons[category_value].setChecked(True)
+            self.task_selected.emit(category_value)
 
     def set_voice_recording(self, is_recording: bool):
         """Update voice recording state in UI."""
@@ -320,15 +581,58 @@ class MainWindow(QMainWindow):
     def __init__(self, orchestrator: AgentOrchestrator, parent=None):
         super().__init__(parent)
         self.orchestrator = orchestrator
-        self._is_recording = False
-        self._speech_interface = None  # Lazy-loaded
+        self._app_in_background = False
+
+        # Initialize screen capture service
+        from src.capabilities.screen_capture import ScreenCaptureService
+
+        self._screen_service = ScreenCaptureService(
+            monitor=orchestrator.config.screen_capture_monitor,
+            interval=orchestrator.config.screen_capture_interval,
+        )
+        self._screen_service.vision_enabled = orchestrator.config.screen_capture_vision
+        self._screen_service.gemini_enabled = orchestrator.config.screen_capture_gemini
+
+        # ── Gemini Live push-to-talk speech service ──
+        from src.api.gemini_live_speech import GeminiLiveSpeechService
+        from src.utils.secure_storage import SecureStorage
+
+        google_key = (
+            SecureStorage.get_google_api_key()
+            or orchestrator.config.google_api_key
+            or None
+        )
+        self._speech_service = GeminiLiveSpeechService(
+            system_prompt=(
+                "You are Panther, a helpful AI voice assistant. "
+                "Be concise and conversational."
+            ),
+            api_key=google_key,
+            vad_enabled=orchestrator.config.vad_enabled,
+        )
+        self._speech_service.status_changed.connect(self._on_speech_status)
+        self._speech_service.error_occurred.connect(self._on_speech_error)
+        self._speech_service.partial_transcript.connect(self._on_speech_transcript)
+
         self._setup_ui()
         self._connect_signals()
         self._update_status()
 
+        # Start screen capture loop (only captures when app is in background + enabled)
+        if self._screen_service.is_available:
+            self._screen_service.start()
+
+        # Listen for application-wide focus changes
+        app = QApplication.instance()
+        if app:
+            app.applicationStateChanged.connect(self._on_app_state_changed)
+
         # Start with settings if no API key
         if not orchestrator.is_ready:
             self._show_settings()
+
+        # Start Gemini Live session (connects using env var API key)
+        self._speech_service.start_conversation()
 
     def _setup_ui(self):
         """Setup main window UI."""
@@ -356,28 +660,14 @@ class MainWindow(QMainWindow):
         self.chat_widget = ChatWidget()
         self.content_stack.addWidget(self.chat_widget)
 
-        # 1: Files panel
-        from src.ui.files_panel import FilesPanel
-        self.files_panel = FilesPanel(
-            files_manager=self.orchestrator._files,  # may be None, set later
-        )
-        self.content_stack.addWidget(self.files_panel)
-
-        # 2: Browser panel
-        from src.ui.browser_panel import BrowserPanel
-        self.browser_panel = BrowserPanel(
-            browser_controller=self.orchestrator._browser,  # may be None, set later
-        )
-        self.content_stack.addWidget(self.browser_panel)
-
-        # 3: Memory panel
+        # 1: Memory panel
         from src.ui.memory_panel import MemoryPanel
         self.memory_panel = MemoryPanel(
             memory_system=self.orchestrator.memory,
         )
         self.content_stack.addWidget(self.memory_panel)
 
-        # 4: Tasks panel
+        # 2: Tasks panel
         from src.ui.tasks_panel import TasksPanel
         self.tasks_panel = TasksPanel(
             task_planner=self.orchestrator._task_planner,  # may be None, set later
@@ -393,16 +683,20 @@ class MainWindow(QMainWindow):
         """Connect UI signals."""
         # Sidebar navigation
         self.sidebar.chat_btn.clicked.connect(lambda: self._switch_view(0))
-        self.sidebar.files_btn.clicked.connect(lambda: self._switch_view(1))
-        self.sidebar.browser_btn.clicked.connect(lambda: self._switch_view(2))
-        self.sidebar.memory_btn.clicked.connect(lambda: self._switch_view(3))
-        self.sidebar.tasks_btn.clicked.connect(lambda: self._switch_view(4))
+        self.sidebar.memory_btn.clicked.connect(lambda: self._switch_view(1))
+        self.sidebar.tasks_btn.clicked.connect(lambda: self._switch_view(2))
         self.sidebar.settings_btn.clicked.connect(self._show_settings)
         self.sidebar.new_chat_btn.clicked.connect(self._new_chat)
 
         # Chat
         self.chat_widget.message_sent.connect(self._on_message_sent)
-        self.chat_widget.voice_requested.connect(self._on_voice_requested)
+        self.chat_widget.message_sent_with_attachments.connect(
+            self._on_message_sent_with_attachments
+        )
+        # Push-to-talk: press → start_turn, release → stop_turn
+        self.chat_widget.voice_btn.pressed.connect(self._on_mic_pressed)
+        self.chat_widget.voice_btn.released.connect(self._on_mic_released)
+        self.chat_widget.task_selected.connect(self._on_task_selected)
 
     def _switch_view(self, index: int):
         """Switch content view."""
@@ -411,8 +705,6 @@ class MainWindow(QMainWindow):
         # Update sidebar buttons
         buttons = [
             self.sidebar.chat_btn,
-            self.sidebar.files_btn,
-            self.sidebar.browser_btn,
             self.sidebar.memory_btn,
             self.sidebar.tasks_btn,
         ]
@@ -421,17 +713,9 @@ class MainWindow(QMainWindow):
 
         # Refresh panels when switching to them
         if index == 1:
-            # Files panel - update manager ref if it was lazy-loaded
-            if self.orchestrator._files:
-                self.files_panel.set_files_manager(self.orchestrator._files)
-        elif index == 2:
-            # Browser panel - update controller ref
-            if self.orchestrator._browser:
-                self.browser_panel.set_browser_controller(self.orchestrator._browser)
-        elif index == 3:
             # Memory panel - refresh sessions
             self.memory_panel._load_sessions()
-        elif index == 4:
+        elif index == 2:
             # Tasks panel - update planner ref
             if self.orchestrator._task_planner:
                 self.tasks_panel.set_task_planner(self.orchestrator._task_planner)
@@ -442,6 +726,7 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             self._update_status()
             self.sidebar.set_model(self.orchestrator.config.default_model)
+            self._reload_screen_settings()
 
     def _new_chat(self):
         """Start a new chat session."""
@@ -470,18 +755,103 @@ class MainWindow(QMainWindow):
             )
             return
 
+        # Check if screen context should be injected
+        screen_b64 = None
+        if (
+            self.orchestrator.config.screen_capture_vision
+            and self._app_in_background
+            and self._screen_service.is_available
+        ):
+            screen_b64 = self._screen_service.get_latest_base64()
+
+        if screen_b64:
+            # Route through attachment flow with screen context
+            self.chat_widget.add_message(
+                message + "\n🖥️ [Screen context included]", is_user=True
+            )
+            self.chat_widget.set_enabled(False)
+            self.chat_widget.add_typing_indicator()
+            self.sidebar.set_status("● Processing with screen context...")
+            asyncio.create_task(
+                self._process_message_with_screen(message, screen_b64)
+            )
+            return
+
         # Disable input during processing
         self.chat_widget.set_enabled(False)
         self.chat_widget.add_typing_indicator()
-        self.sidebar.set_status("● Processing...")
+
+        # Show active task mode in status
+        if self.orchestrator.active_task_category:
+            cat = self.orchestrator.active_task_category
+            preset = get_task_preset(cat)
+            self.sidebar.set_status(f"● {preset.emoji} {preset.label} mode...")
+        else:
+            self.sidebar.set_status("● Processing...")
 
         # Process message asynchronously
         asyncio.create_task(self._process_message(message))
 
+    def _on_message_sent_with_attachments(self, message: str, attachments: list):
+        """Handle user message with file attachments."""
+        if not self.orchestrator.is_ready:
+            self.chat_widget.add_message(
+                "Please configure your NVIDIA API key in Settings first.",
+                is_user=False,
+            )
+            return
+
+        # Disable input during processing
+        self.chat_widget.set_enabled(False)
+        self.chat_widget.add_typing_indicator()
+
+        n = len(attachments)
+        self.sidebar.set_status(f"● Processing {n} attachment{'s' if n > 1 else ''}...")
+
+        asyncio.create_task(
+            self._process_message_with_attachments(message, attachments)
+        )
+
+    def _on_task_selected(self, category_value: str):
+        """Handle task preset button selection."""
+        if not category_value:
+            # Reset to default
+            self.orchestrator.set_task_category(None)
+            self.orchestrator.config.default_model = "meta/llama-3.1-8b-instruct"
+            self.sidebar.set_model(self.orchestrator.config.default_model)
+            self.sidebar.set_status("● Default mode")
+            self.chat_widget.add_message(
+                "🔄 Switched back to **default mode** (meta/llama-3.1-8b-instruct)",
+                is_user=False,
+            )
+            return
+
+        try:
+            category = TaskCategory(category_value)
+        except ValueError:
+            return
+
+        preset = get_task_preset(category)
+        self.orchestrator.set_task_category(category)
+        self.sidebar.set_model(preset.model)
+        self.sidebar.set_status(f"● {preset.emoji} {preset.label} mode")
+
+        # Notification bubble
+        short_model = preset.model.split('/')[-1]
+        self.chat_widget.add_message(
+            f"{preset.emoji} **{preset.label} mode activated**\n"
+            f"Model: `{short_model}`\n"
+            f"{preset.description}",
+            is_user=False,
+        )
+
     async def _process_message(self, message: str):
         """Process message with agent using proper streaming (single bubble)."""
+        import time
         response_text = ""
         ai_bubble: Optional[MessageBubble] = None
+        last_render_time = 0.0
+        RENDER_INTERVAL = 0.12  # seconds — throttle markdown re-renders
 
         try:
             self.sidebar.set_status("● Waiting for API...")
@@ -495,11 +865,19 @@ class MainWindow(QMainWindow):
                     ai_bubble = self.chat_widget.begin_ai_response()
                     self.sidebar.set_status("● Streaming response...")
 
-                # Update the same bubble with accumulated text
-                self.chat_widget.update_ai_response(response_text)
+                # Throttle rendering to avoid lag during fast streaming
+                now = time.monotonic()
+                if now - last_render_time >= RENDER_INTERVAL:
+                    self.chat_widget.update_ai_response(response_text)
+                    last_render_time = now
 
                 # Yield control to event loop for UI updates
                 await asyncio.sleep(0)
+
+            # Final render with complete text
+            if ai_bubble is not None:
+                self.chat_widget.update_ai_response(response_text)
+                self.chat_widget.finish_ai_response()
 
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error processing message: {e}")
@@ -547,65 +925,215 @@ class MainWindow(QMainWindow):
             self.chat_widget.set_enabled(True)
             self._update_status()
 
-    def _on_voice_requested(self):
-        """Handle voice mic button click."""
-        if self._is_recording:
-            # Stop recording
-            self._is_recording = False
-            self.chat_widget.set_voice_recording(False)
-        else:
-            # Start recording
-            self._is_recording = True
-            self.chat_widget.set_voice_recording(True)
-            asyncio.create_task(self._record_and_transcribe())
+    async def _process_message_with_attachments(
+        self, message: str, attachments: List[str]
+    ):
+        """Process message with file attachments using multimodal API."""
+        import time
+        response_text = ""
+        ai_bubble: Optional[MessageBubble] = None
+        last_render_time = 0.0
+        RENDER_INTERVAL = 0.12
 
-    async def _record_and_transcribe(self):
-        """Record audio and transcribe to text."""
         try:
-            # Lazy-load speech interface
-            if self._speech_interface is None:
-                self.sidebar.set_status("Loading speech model...")
-                try:
-                    from src.capabilities.speech import SpeechInterface
-                    self._speech_interface = SpeechInterface()
-                    logger.info("SpeechInterface loaded")
-                except ImportError as e:
-                    logger.error(f"Speech not available: {e}")
-                    self.chat_widget.set_transcription("")
-                    self.chat_widget.add_message(
-                        "Speech requires faster-whisper and piper-tts to be installed.",
-                        is_user=False,
-                    )
-                    self._is_recording = False
-                    return
+            self.sidebar.set_status("● Analyzing attachments...")
 
-            self.sidebar.set_status("● Recording...")
+            async for chunk in self.orchestrator.process_message_with_attachments(
+                message, attachments
+            ):
+                response_text += chunk
 
-            # Record audio (5 seconds with VAD)
-            text = await self._speech_interface.listen_and_transcribe(duration=5)
+                if ai_bubble is None:
+                    self.chat_widget.remove_typing_indicator()
+                    ai_bubble = self.chat_widget.begin_ai_response()
+                    self.sidebar.set_status("● Streaming response...")
 
-            if text:
-                self.chat_widget.set_transcription(text)
-                logger.info(f"Transcribed: {text}")
+                now = time.monotonic()
+                if now - last_render_time >= RENDER_INTERVAL:
+                    self.chat_widget.update_ai_response(response_text)
+                    last_render_time = now
+
+                await asyncio.sleep(0)
+
+            if ai_bubble is not None:
+                self.chat_widget.update_ai_response(response_text)
+                self.chat_widget.finish_ai_response()
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error processing attachment message: {e}")
+            if ai_bubble is None:
+                self.chat_widget.remove_typing_indicator()
+                ai_bubble = self.chat_widget.begin_ai_response()
+            status_code = e.response.status_code
+            if status_code == 401:
+                error_msg = "Invalid API key. Please update it in Settings."
+            elif status_code == 429:
+                error_msg = "Rate limited. Please wait and try again."
+            elif status_code == 404:
+                error_msg = "Vision model not found. Try a different model."
             else:
-                self.chat_widget.set_voice_recording(False)
-                self.chat_widget.add_message(
-                    "No speech detected. Please try again.",
-                    is_user=False,
-                )
+                error_msg = f"API error (HTTP {status_code}): {e}"
+            self.chat_widget.update_ai_response(f"Error: {error_msg}")
 
         except Exception as e:
-            logger.error(f"Voice recording error: {e}")
-            self.chat_widget.set_voice_recording(False)
-            self.chat_widget.add_message(
-                f"Voice recording error: {e}",
-                is_user=False,
-            )
+            logger.error(f"Error processing attachment message: {e}")
+            if ai_bubble is None:
+                self.chat_widget.remove_typing_indicator()
+                ai_bubble = self.chat_widget.begin_ai_response()
+            self.chat_widget.update_ai_response(f"Error: {str(e)}")
+
         finally:
-            self._is_recording = False
+            if ai_bubble is None:
+                self.chat_widget.remove_typing_indicator()
+                self.chat_widget.add_message("No response received.", is_user=False)
+
+            self.chat_widget.finish_ai_response()
+            self.chat_widget.set_enabled(True)
             self._update_status()
+
+    async def _process_message_with_screen(self, message: str, screen_b64: str):
+        """Process message with screen context injected as a vision model image."""
+        import time
+
+        response_text = ""
+        ai_bubble: Optional[MessageBubble] = None
+        last_render_time = 0.0
+        RENDER_INTERVAL = 0.12
+
+        try:
+            self.sidebar.set_status("● Analyzing screen...")
+
+            async for chunk in self.orchestrator.process_message_with_screen(
+                message, screen_b64
+            ):
+                response_text += chunk
+
+                if ai_bubble is None:
+                    self.chat_widget.remove_typing_indicator()
+                    ai_bubble = self.chat_widget.begin_ai_response()
+                    self.sidebar.set_status("● Streaming response...")
+
+                now = time.monotonic()
+                if now - last_render_time >= RENDER_INTERVAL:
+                    self.chat_widget.update_ai_response(response_text)
+                    last_render_time = now
+
+                await asyncio.sleep(0)
+
+            if ai_bubble is not None:
+                self.chat_widget.update_ai_response(response_text)
+                self.chat_widget.finish_ai_response()
+
+        except Exception as e:
+            logger.error(f"Error processing message with screen: {e}")
+            if ai_bubble is None:
+                self.chat_widget.remove_typing_indicator()
+                ai_bubble = self.chat_widget.begin_ai_response()
+            self.chat_widget.update_ai_response(f"Error: {str(e)}")
+
+        finally:
+            if ai_bubble is None:
+                self.chat_widget.remove_typing_indicator()
+                self.chat_widget.add_message("No response received.", is_user=False)
+
+            self.chat_widget.finish_ai_response()
+            self.chat_widget.set_enabled(True)
+            self._update_status()
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Push-to-talk voice  (GeminiLiveSpeechService)
+    # ─────────────────────────────────────────────────────────────────────
+
+    def _on_mic_pressed(self):
+        """Push-to-talk: mic button pressed — start recording."""
+        self.chat_widget.voice_btn.setChecked(True)
+        self._speech_service.start_turn()
+
+    def _on_mic_released(self):
+        """Push-to-talk: mic button released — stop recording."""
+        self.chat_widget.voice_btn.setChecked(False)
+        self._speech_service.stop_turn()
+
+    def _on_speech_status(self, status: str):
+        """Update sidebar and voice indicator based on speech service state."""
+        status_map = {
+            "idle": "● Ready",
+            "connecting": "● Connecting to Gemini Live…",
+            "listening": "● 🎤 Listening…",
+            "speaking": "● 🔊 Panther speaking…",
+            "error": "● Voice error",
+        }
+        text = status_map.get(status, f"● {status}")
+        self.sidebar.set_status(text, is_error=(status == "error"))
+
+        if status == "listening":
+            self.chat_widget.voice_indicator.setText(
+                "🐆  Listening… release mic to stop"
+            )
+            self.chat_widget.voice_indicator.setVisible(True)
+        elif status == "speaking":
+            self.chat_widget.voice_indicator.setText("🐆  Panther is speaking…")
+            self.chat_widget.voice_indicator.setVisible(True)
+        else:
+            self.chat_widget.voice_indicator.setVisible(False)
+
+    def _on_speech_error(self, error: str):
+        """Show speech error in chat."""
+        self.chat_widget.add_message(f"Voice error: {error}", is_user=False)
+
+    def _on_speech_transcript(self, text: str):
+        """Handle speech transcript from Gemini Live."""
+        logger.info(f"Transcript: {text}")
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Background detection & screen capture
+    # ─────────────────────────────────────────────────────────────────────
+
+    def changeEvent(self, event):
+        """Detect window minimize / restore for background mode."""
+        if event.type() == QEvent.Type.WindowStateChange:
+            is_bg = self.isMinimized() or not self.isActiveWindow()
+            self._on_app_background_changed(is_bg)
+        super().changeEvent(event)
+
+    def _on_app_state_changed(self, state):
+        """Handle application-wide focus changes."""
+        is_bg = state != Qt.ApplicationState.ApplicationActive
+        self._on_app_background_changed(is_bg)
+
+    def _on_app_background_changed(self, is_background: bool):
+        """Update screen capture when app foreground/background state changes."""
+        if is_background == self._app_in_background:
+            return  # no change
+        self._app_in_background = is_background
+        self._screen_service.set_app_in_background(is_background)
+
+        config = self.orchestrator.config
+        screen_enabled = config.screen_capture_vision or config.screen_capture_gemini
+
+        if not screen_enabled:
+            return
+
+        if is_background:
+            self.sidebar.set_status("● Screen reading: ACTIVE")
+        else:
+            if self._speech_service.is_active:
+                self.sidebar.set_status("● Gemini Live active (screen paused)")
+            else:
+                self.sidebar.set_status("● Screen reading: PAUSED")
+                QTimer.singleShot(2000, self._update_status)
+
+    def _reload_screen_settings(self):
+        """Refresh screen service settings from config (called after settings save)."""
+        config = self.orchestrator.config
+        self._screen_service.vision_enabled = config.screen_capture_vision
+        self._screen_service.gemini_enabled = config.screen_capture_gemini
+        self._screen_service.monitor = config.screen_capture_monitor
+        self._screen_service.interval = config.screen_capture_interval
 
     def closeEvent(self, event):
         """Handle window close."""
+        self._screen_service.stop()
+        self._speech_service.shutdown()
         asyncio.create_task(self.orchestrator.close())
         event.accept()

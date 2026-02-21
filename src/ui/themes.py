@@ -1,335 +1,364 @@
-"""UI themes and styles for the application."""
+"""UI themes and styles — luxury panther obsidian-black + glowing orange resin.
 
-# Dark theme colors (inspired by NVIDIA)
+Inspired by black crystal tiles with luminescent orange resin veins,
+panther-themed sleek design language, and premium glassmorphism effects.
+"""
+
+# ── Panther Dark (default) ──────────────────────────────────────────────────
 DARK_COLORS = {
-    "background": "#1a1a1a",
-    "surface": "#2d2d2d",
-    "surface_variant": "#3d3d3d",
-    "primary": "#76b900",  # NVIDIA green
-    "primary_variant": "#5a8c00",
-    "secondary": "#00d4aa",
-    "text": "#ffffff",
-    "text_secondary": "#b0b0b0",
-    "border": "#404040",
-    "error": "#ff5252",
-    "success": "#4caf50",
-    "warning": "#ffc107",
-    "user_message_bg": "#2d3748",
-    "ai_message_bg": "#1e3a5f",
-    "input_bg": "#363636",
+    "background": "#0A0A0A",        # obsidian black
+    "surface": "#121215",           # sidebar / input area — slightly warm
+    "surface_variant": "#1a1712",   # hover states — warm dark
+    "surface_elevated": "#161410",  # cards / elevated surfaces
+    "primary": "#FF6B35",           # glowing orange resin
+    "primary_variant": "#FF8C42",   # lighter orange
+    "primary_muted": "rgba(255, 107, 53, 0.12)",  # subtle orange tint
+    "secondary": "#FFB347",         # amber glow
+    "accent_gold": "#FFD700",       # golden shimmer
+    "text": "#f0ece8",              # warm white
+    "text_secondary": "#8a8078",    # warm muted
+    "text_tertiary": "#5a5248",     # very muted warm
+    "border": "#1e1a14",            # warm subtle borders
+    "border_focus": "#FF6B35",      # focused input border — orange
+    "error": "#FF4500",             # red-orange
+    "success": "#FF8C42",           # orange pulse (replaces green)
+    "warning": "#FFA500",           # amber
+    "user_message_bg": "#1a1510",   # warm dark user pill
+    "ai_message_bg": "transparent", # no background for AI
+    "input_bg": "#0f0e0c",         # deep warm input bg
+    "scrollbar_bg": "transparent",
+    "scrollbar_handle": "#2a2218",
+    "glow": "rgba(255, 107, 53, 0.25)",  # orange glow for shadows
 }
 
-# Light theme colors
+# ── Light theme (unchanged, for completeness) ──────────────────────────────
 LIGHT_COLORS = {
-    "background": "#f5f5f5",
+    "background": "#faf8f5",
     "surface": "#ffffff",
-    "surface_variant": "#e0e0e0",
-    "primary": "#76b900",
-    "primary_variant": "#5a8c00",
-    "secondary": "#00b894",
-    "text": "#212121",
-    "text_secondary": "#757575",
-    "border": "#e0e0e0",
+    "surface_variant": "#f5f0ea",
+    "surface_elevated": "#ffffff",
+    "primary": "#FF6B35",
+    "primary_variant": "#e55a25",
+    "primary_muted": "rgba(255, 107, 53, 0.08)",
+    "secondary": "#FFB347",
+    "accent_gold": "#FFD700",
+    "text": "#1a1410",
+    "text_secondary": "#6a6058",
+    "text_tertiary": "#9a9088",
+    "border": "#e8e0d8",
+    "border_focus": "#FF6B35",
     "error": "#d32f2f",
-    "success": "#388e3c",
+    "success": "#e55a25",
     "warning": "#f57c00",
-    "user_message_bg": "#e3f2fd",
-    "ai_message_bg": "#f3e5f5",
+    "user_message_bg": "#fff3e8",
+    "ai_message_bg": "transparent",
     "input_bg": "#ffffff",
+    "scrollbar_bg": "transparent",
+    "scrollbar_handle": "#d0c8c0",
+    "glow": "rgba(255, 107, 53, 0.15)",
 }
 
 
-def get_stylesheet(colors: dict) -> str:
-    """Generate QSS stylesheet from color palette.
-
-    Args:
-        colors: Color dictionary
-
-    Returns:
-        QSS stylesheet string
-    """
+def get_stylesheet(c: dict) -> str:
+    """Generate QSS stylesheet from color palette."""
     return f"""
-    /* Main Window */
+    /* ═══════════════════════════════════════════════════════════════════
+       GLOBAL — Panther Orange Resin Theme
+       ═══════════════════════════════════════════════════════════════════ */
     QMainWindow {{
-        background-color: {colors["background"]};
-        color: {colors["text"]};
+        background-color: {c["background"]};
+        color: {c["text"]};
     }}
-
-    /* Central Widget */
     QWidget {{
-        background-color: {colors["background"]};
-        color: {colors["text"]};
+        background-color: {c["background"]};
+        color: {c["text"]};
+        font-family: 'Inter', 'Segoe UI', -apple-system, sans-serif;
     }}
 
-    /* Sidebar */
+    /* ═══ SIDEBAR — frosted glass with orange accent ════════════════════ */
     QFrame#sidebar {{
-        background-color: {colors["surface"]};
-        border-right: 1px solid {colors["border"]};
+        background-color: {c["surface"]};
+        border-right: 1px solid {c["border"]};
     }}
 
-    /* Chat Area */
+    /* ═══ CHAT AREA ═════════════════════════════════════════════════════ */
     QScrollArea#chatArea {{
-        background-color: {colors["background"]};
+        background-color: {c["background"]};
         border: none;
     }}
 
-    /* Message Bubbles */
+    /* ═══ MESSAGE BUBBLES ═══════════════════════════════════════════════ */
     QFrame#userMessage {{
-        background-color: {colors["user_message_bg"]};
-        border-radius: 12px;
-        padding: 12px;
+        background-color: {c["user_message_bg"]};
+        border-radius: 16px;
+        border: 1px solid {c["border"]};
     }}
-
     QFrame#aiMessage {{
-        background-color: {colors["ai_message_bg"]};
-        border-radius: 12px;
-        padding: 12px;
+        background-color: transparent;
+        border: none;
     }}
 
-    /* Input Area */
+    /* ═══ INPUT AREA ════════════════════════════════════════════════════ */
     QFrame#inputArea {{
-        background-color: {colors["surface"]};
-        border-top: 1px solid {colors["border"]};
+        background-color: {c["background"]};
+        border-top: none;
     }}
 
     QTextEdit#messageInput {{
-        background-color: {colors["input_bg"]};
-        color: {colors["text"]};
-        border: 1px solid {colors["border"]};
-        border-radius: 8px;
-        padding: 8px;
+        background-color: {c["input_bg"]};
+        color: {c["text"]};
+        border: 1px solid {c["border"]};
+        border-radius: 14px;
+        padding: 10px 16px;
         font-size: 14px;
+        selection-background-color: {c["primary"]};
     }}
-
     QTextEdit#messageInput:focus {{
-        border: 2px solid {colors["primary"]};
+        border: 1px solid {c["primary"]};
     }}
 
-    /* Buttons */
+    /* ═══ BUTTONS ═══════════════════════════════════════════════════════ */
     QPushButton {{
-        background-color: {colors["primary"]};
-        color: white;
+        background-color: {c["primary"]};
+        color: #0A0A0A;
         border: none;
-        border-radius: 6px;
-        padding: 8px 16px;
-        font-weight: 500;
+        border-radius: 12px;
+        padding: 8px 18px;
+        font-weight: 600;
+        font-size: 13px;
     }}
-
     QPushButton:hover {{
-        background-color: {colors["primary_variant"]};
+        background-color: {c["primary_variant"]};
     }}
-
     QPushButton:pressed {{
-        background-color: {colors["primary_variant"]};
+        background-color: {c["primary"]};
     }}
-
     QPushButton:disabled {{
-        background-color: {colors["surface_variant"]};
-        color: {colors["text_secondary"]};
+        background-color: {c["surface_variant"]};
+        color: {c["text_tertiary"]};
     }}
 
+    /* Secondary / ghost button */
     QPushButton#secondary {{
-        background-color: {colors["surface_variant"]};
-        color: {colors["text"]};
-        border: 1px solid {colors["border"]};
+        background-color: transparent;
+        color: {c["text"]};
+        border: 1px solid {c["border"]};
     }}
-
     QPushButton#secondary:hover {{
-        background-color: {colors["surface"]};
+        background-color: {c["surface_variant"]};
+        border-color: {c["primary"]};
     }}
 
-    /* Sidebar Buttons */
+    /* Sidebar navigation */
     QPushButton#sidebarButton {{
         background-color: transparent;
-        color: {colors["text_secondary"]};
+        color: {c["text_secondary"]};
         border: none;
-        border-radius: 4px;
-        padding: 10px 16px;
+        border-radius: 10px;
+        padding: 10px 14px;
         text-align: left;
+        font-size: 13px;
+        font-weight: 500;
     }}
-
     QPushButton#sidebarButton:hover {{
-        background-color: {colors["surface_variant"]};
-        color: {colors["text"]};
+        background-color: {c["surface_variant"]};
+        color: {c["text"]};
     }}
-
     QPushButton#sidebarButton:checked {{
-        background-color: {colors["surface_variant"]};
-        color: {colors["primary"]};
-        border-left: 3px solid {colors["primary"]};
+        background-color: {c["primary_muted"]};
+        color: {c["primary"]};
     }}
 
-    /* Labels */
+    /* ═══ LABELS ════════════════════════════════════════════════════════ */
     QLabel {{
-        color: {colors["text"]};
+        color: {c["text"]};
+        background: transparent;
     }}
-
     QLabel#title {{
-        font-size: 18px;
-        font-weight: bold;
-        color: {colors["text"]};
+        font-size: 16px;
+        font-weight: 700;
+        color: {c["primary"]};
+        letter-spacing: -0.3px;
     }}
-
     QLabel#subtitle {{
-        font-size: 14px;
-        color: {colors["text_secondary"]};
+        font-size: 13px;
+        color: {c["text_secondary"]};
     }}
 
-    /* Scrollbars */
+    /* ═══ SCROLLBARS (ultra-thin, warm) ═════════════════════════════════ */
     QScrollBar:vertical {{
-        background-color: {colors["surface"]};
-        width: 12px;
-        margin: 0px;
+        background-color: transparent;
+        width: 6px;
+        margin: 0;
     }}
-
     QScrollBar::handle:vertical {{
-        background-color: {colors["surface_variant"]};
-        min-height: 30px;
-        border-radius: 6px;
-        margin: 2px;
+        background-color: {c["scrollbar_handle"]};
+        min-height: 40px;
+        border-radius: 3px;
     }}
-
     QScrollBar::handle:vertical:hover {{
-        background-color: {colors["text_secondary"]};
+        background-color: {c["primary"]};
     }}
-
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-        height: 0px;
+        height: 0;
+    }}
+    QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+        background: transparent;
     }}
 
-    /* Combo Box */
+    /* ═══ COMBO BOX ═════════════════════════════════════════════════════ */
     QComboBox {{
-        background-color: {colors["surface"]};
-        color: {colors["text"]};
-        border: 1px solid {colors["border"]};
-        border-radius: 6px;
-        padding: 6px 12px;
-        min-height: 30px;
+        background-color: {c["surface"]};
+        color: {c["text"]};
+        border: 1px solid {c["border"]};
+        border-radius: 10px;
+        padding: 8px 32px 8px 12px;
+        min-height: 32px;
+        font-size: 13px;
     }}
-
     QComboBox:hover {{
-        border: 1px solid {colors["primary"]};
+        border-color: {c["primary"]};
     }}
-
+    QComboBox:focus {{
+        border: 1px solid {c["primary"]};
+    }}
     QComboBox::drop-down {{
+        subcontrol-origin: padding;
+        subcontrol-position: top right;
+        width: 28px;
         border: none;
-        width: 30px;
+        background: transparent;
     }}
-
+    QComboBox::down-arrow {{
+        width: 10px;
+        height: 10px;
+        image: none;
+    }}
     QComboBox QAbstractItemView {{
-        background-color: {colors["surface"]};
-        color: {colors["text"]};
-        border: 1px solid {colors["border"]};
-        selection-background-color: {colors["primary"]};
+        background-color: {c["surface"]};
+        color: {c["text"]};
+        border: 1px solid {c["border"]};
+        selection-background-color: {c["primary"]};
+        selection-color: #0A0A0A;
+        outline: none;
+        padding: 4px;
+        border-radius: 10px;
+    }}
+    QComboBox QAbstractItemView::item {{
+        min-height: 30px;
+        padding: 6px 10px;
+    }}
+    QComboBox QAbstractItemView::item:hover {{
+        background-color: {c["surface_variant"]};
     }}
 
-    /* Line Edit */
+    /* ═══ LINE EDIT ═════════════════════════════════════════════════════ */
     QLineEdit {{
-        background-color: {colors["surface"]};
-        color: {colors["text"]};
-        border: 1px solid {colors["border"]};
-        border-radius: 6px;
-        padding: 8px;
+        background-color: {c["surface"]};
+        color: {c["text"]};
+        border: 1px solid {c["border"]};
+        border-radius: 10px;
+        padding: 8px 12px;
+        font-size: 13px;
     }}
-
     QLineEdit:focus {{
-        border: 2px solid {colors["primary"]};
+        border: 1px solid {c["primary"]};
     }}
 
-    /* Check Box */
+    /* ═══ CHECKBOXES ════════════════════════════════════════════════════ */
     QCheckBox {{
-        color: {colors["text"]};
+        color: {c["text"]};
+        spacing: 8px;
     }}
-
     QCheckBox::indicator {{
         width: 18px;
         height: 18px;
-        border-radius: 4px;
-        border: 2px solid {colors["border"]};
-        background-color: {colors["surface"]};
+        border-radius: 5px;
+        border: 1px solid {c["border"]};
+        background-color: {c["surface"]};
     }}
-
     QCheckBox::indicator:checked {{
-        background-color: {colors["primary"]};
-        border: 2px solid {colors["primary"]};
+        background-color: {c["primary"]};
+        border-color: {c["primary"]};
     }}
 
-    /* Group Box */
+    /* ═══ GROUP BOX ═════════════════════════════════════════════════════ */
     QGroupBox {{
-        border: 1px solid {colors["border"]};
-        border-radius: 8px;
-        margin-top: 12px;
-        padding-top: 12px;
-        font-weight: bold;
-        color: {colors["text"]};
+        border: 1px solid {c["border"]};
+        border-radius: 12px;
+        margin-top: 14px;
+        padding-top: 14px;
+        font-weight: 600;
+        color: {c["text"]};
     }}
-
     QGroupBox::title {{
         subcontrol-origin: margin;
-        left: 12px;
+        left: 14px;
         padding: 0 8px;
     }}
 
-    /* Dialog */
+    /* ═══ DIALOGS ═══════════════════════════════════════════════════════ */
     QDialog {{
-        background-color: {colors["background"]};
-        color: {colors["text"]};
+        background-color: {c["background"]};
+        color: {c["text"]};
     }}
 
-    /* Progress Bar */
+    /* ═══ PROGRESS BAR ═════════════════════════════════════════════════ */
     QProgressBar {{
         border: none;
-        border-radius: 4px;
-        background-color: {colors["surface_variant"]};
+        border-radius: 5px;
+        background-color: {c["surface_variant"]};
         text-align: center;
-        color: {colors["text"]};
+        color: {c["text"]};
     }}
-
     QProgressBar::chunk {{
-        background-color: {colors["primary"]};
-        border-radius: 4px;
+        background-color: {c["primary"]};
+        border-radius: 5px;
     }}
 
-    /* Tab Widget */
+    /* ═══ TAB WIDGET ════════════════════════════════════════════════════ */
     QTabWidget::pane {{
-        border: 1px solid {colors["border"]};
-        background-color: {colors["background"]};
+        border: 1px solid {c["border"]};
+        background-color: {c["background"]};
+        border-radius: 10px;
     }}
-
     QTabBar::tab {{
-        background-color: {colors["surface"]};
-        color: {colors["text_secondary"]};
+        background-color: transparent;
+        color: {c["text_secondary"]};
         padding: 10px 20px;
         border: none;
+        font-weight: 500;
     }}
-
     QTabBar::tab:selected {{
-        background-color: {colors["background"]};
-        color: {colors["primary"]};
-        border-bottom: 2px solid {colors["primary"]};
+        color: {c["primary"]};
+        border-bottom: 2px solid {c["primary"]};
+    }}
+    QTabBar::tab:hover:!selected {{
+        color: {c["text"]};
     }}
 
-    QTabBar::tab:hover:!selected {{
-        color: {colors["text"]};
+    /* ═══ SPIN BOX ══════════════════════════════════════════════════════ */
+    QSpinBox, QDoubleSpinBox {{
+        background-color: {c["surface"]};
+        color: {c["text"]};
+        border: 1px solid {c["border"]};
+        border-radius: 10px;
+        padding: 6px 10px;
+        font-size: 13px;
     }}
-"""
+    QSpinBox:focus, QDoubleSpinBox:focus {{
+        border: 1px solid {c["primary"]};
+    }}
+    """
 
 
 def apply_dark_theme(app):
-    """Apply dark theme to QApplication.
-
-    Args:
-        app: QApplication instance
-    """
+    """Apply dark theme to QApplication."""
     stylesheet = get_stylesheet(DARK_COLORS)
     app.setStyleSheet(stylesheet)
 
 
 def apply_light_theme(app):
-    """Apply light theme to QApplication.
-
-    Args:
-        app: QApplication instance
-    """
+    """Apply light theme to QApplication."""
     stylesheet = get_stylesheet(LIGHT_COLORS)
     app.setStyleSheet(stylesheet)

@@ -11,7 +11,7 @@ from src.core.agent import AgentOrchestrator
 from src.ui.main_window import MainWindow
 from src.ui.themes import apply_dark_theme
 from src.utils.logging_config import setup_logging
-from src.utils.secure_storage import get_api_key
+from src.utils.secure_storage import get_api_key, get_google_api_key
 
 
 async def main():
@@ -43,11 +43,32 @@ async def main():
         orchestrator = AgentOrchestrator(config)
         await orchestrator.initialize()
 
-        # Load API key from secure storage if available
+        # API key priority: keyring (secure storage) > .env file > not set
         stored_key = get_api_key()
         if stored_key:
-            logger.info("Found stored API key")
+            logger.info("Found API key in secure storage (keyring)")
             orchestrator.set_api_key(stored_key)
+        elif config.nvidia_api_key and config.nvidia_api_key != "your_api_key_here":
+            logger.info("Using API key from .env configuration")
+            # Already set during orchestrator.initialize(), just log it
+        else:
+            logger.warning(
+                "No NVIDIA API key found. Please set it via Settings dialog "
+                "or add NVIDIA_API_KEY to your .env file."
+            )
+
+        # Google API key for Gemini Live voice (optional — only needed for mic)
+        stored_google_key = get_google_api_key()
+        if stored_google_key:
+            logger.info("Found Google API key in secure storage (keyring)")
+            config.google_api_key = stored_google_key
+        elif config.google_api_key:
+            logger.info("Using Google API key from .env configuration")
+        else:
+            logger.info(
+                "No Google API key found. Gemini Live voice not available "
+                "until configured in Settings."
+            )
 
         # Create and show main window
         logger.info("Creating main window...")

@@ -45,7 +45,7 @@ class BrowserPanel(QWidget):
         header_layout.addStretch()
 
         self.status_label = QLabel("● Idle")
-        self.status_label.setStyleSheet("color: #76b900; font-size: 13px;")
+        self.status_label.setStyleSheet("color: #FF6B35; font-size: 13px;")
         header_layout.addWidget(self.status_label)
 
         layout.addLayout(header_layout)
@@ -135,10 +135,10 @@ class BrowserPanel(QWidget):
         pages = getattr(self.browser_controller, "_pages", {})
         if pages:
             self.status_label.setText(f"● Active ({len(pages)} tab{'s' if len(pages) > 1 else ''})")
-            self.status_label.setStyleSheet("color: #00d4aa; font-size: 13px;")
+            self.status_label.setStyleSheet("color: #FFB347; font-size: 13px;")
         else:
             self.status_label.setText("● Idle")
-            self.status_label.setStyleSheet("color: #76b900; font-size: 13px;")
+            self.status_label.setStyleSheet("color: #FF6B35; font-size: 13px;")
 
         # Refresh tabs list
         current_tabs = set(pages.keys())
