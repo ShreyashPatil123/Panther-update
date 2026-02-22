@@ -197,11 +197,11 @@ class MemorySystem:
                 except Exception as e:
                     logger.debug(f"ChromaDB add failed (non-critical): {e}")
 
-            # Update session timestamp
+            # Update session timestamp (preserve title)
             cursor.execute(
                 """
-                INSERT OR REPLACE INTO sessions (id, updated_at)
-                VALUES (?, CURRENT_TIMESTAMP)
+                UPDATE sessions SET updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
                 """,
                 (session_id,),
             )
@@ -456,6 +456,22 @@ class MemorySystem:
             )
             self.conn.commit()
         logger.info(f"Created session: {session_id}")
+
+    async def update_session_title(self, session_id: str, title: str):
+        """Update the title of an existing session.
+
+        Args:
+            session_id: Session identifier
+            title: New title for the session
+        """
+        async with self._lock:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "UPDATE sessions SET title = ? WHERE id = ?",
+                (title, session_id),
+            )
+            self.conn.commit()
+        logger.info(f"Updated session title: {session_id} → {title}")
 
     async def get_sessions(self, limit: int = 20) -> List[Dict[str, Any]]:
         """Get list of conversation sessions.

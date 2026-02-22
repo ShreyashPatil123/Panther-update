@@ -1,11 +1,9 @@
 """Custom panther-themed buttons — QPainter vector art + animations.
 
-Refined designs informed by Stitch luxury component library.
-
-Three luxury buttons:
-  • PantherSendButton  — geometric panther head, breathing glow, outer halo
-  • PantherMicButton   — concentric sound rings, roar on activation
-  • PantherAttachButton — paperclip → panther eye morph when files pending
+Grok-accurate design:
+  • PantherSendButton  — white ↑ arrow in dark circle, hover glow
+  • PantherMicButton   — minimalist mic icon, concentric rings when recording
+  • PantherAttachButton — clean + icon, morphs to panther eye when files attached
 """
 import math
 import os
@@ -28,7 +26,7 @@ from PyQt6.QtGui import (
     QPen,
     QRadialGradient,
 )
-from PyQt6.QtWidgets import QPushButton
+from PyQt6.QtWidgets import QPushButton, QGraphicsDropShadowEffect
 
 
 # ── Color constants ─────────────────────────────────────────────────────────
@@ -37,43 +35,31 @@ ORANGE_LIGHT = QColor("#FF8C42")
 AMBER = QColor("#FFB347")
 GOLD = QColor("#FFD700")
 DARK = QColor("#0A0A0A")
-SURFACE = QColor("#161410")
-WARM_DARK = QColor("#1a1510")
-BORDER = QColor("#2a2218")
-MUTED = QColor("#8a8078")
+SURFACE = QColor("#141414")
+WHITE = QColor("#e8e8e8")
+MUTED = QColor("#888888")
+BORDER = QColor("#2a2a2a")
+BORDER_LIGHT = QColor("#3a3a3a")
 
 
 class PantherSendButton(QPushButton):
-    """Send button — geometric panther head silhouette.
+    """Send button — white upward arrow in dark circle (Grok-accurate).
 
-    Stitch-informed design:
-      • Circular surface (#161410) with subtle orange border
-      • Sharp angular panther head facing right (send direction)
-      • Idle: breathing pulse + outer glow halo
-      • Hover: eyes brighten to gold, glow intensifies, send arrow appears
-      • Click: flash effect
+    Design:
+      • Dark circle (#1a1a1a) with subtle border
+      • Clean white arrow pointing up (↑)
+      • Hover: background brightens, subtle orange glow
+      • Pressed: flash effect
     """
 
     def __init__(self, parent=None):
         super().__init__("", parent)
-        self.setFixedSize(44, 44)
+        self.setFixedSize(36, 36)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolTip("Send message")
 
-        self._glow_opacity = 0.6
         self._is_hovered = False
-        self._breath_phase = 0.0
-
-        # Breathing animation timer
-        self._breath_timer = QTimer(self)
-        self._breath_timer.timeout.connect(self._breathe)
-        self._breath_timer.start(50)
-
-    def _breathe(self):
-        """Idle breathing pulse."""
-        self._breath_phase += 0.08
-        self._glow_opacity = 0.5 + 0.15 * math.sin(self._breath_phase)
-        self.update()
+        self._is_pressed = False
 
     def enterEvent(self, event):
         self._is_hovered = True
@@ -85,110 +71,66 @@ class PantherSendButton(QPushButton):
         self.update()
         super().leaveEvent(event)
 
+    def mousePressEvent(self, event):
+        self._is_pressed = True
+        self.update()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._is_pressed = False
+        self.update()
+        super().mouseReleaseEvent(event)
+
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         w, h = self.width(), self.height()
         cx, cy = w / 2, h / 2
+        r = min(w, h) / 2 - 1
 
-        # ── Outer glow halo (Stitch: soft orange glow shadow) ──
-        if self._is_hovered:
-            halo = QRadialGradient(QPointF(cx, cy), w / 2)
-            halo.setColorAt(0.6, QColor(255, 107, 53, 40))
-            halo.setColorAt(1.0, QColor(255, 107, 53, 0))
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QBrush(halo))
-            p.drawEllipse(QRectF(0, 0, w, h))
+        # ── Background circle ──
+        if self._is_pressed:
+            bg = QColor("#444444")
+        elif self._is_hovered:
+            bg = QColor("#333333")
+        else:
+            bg = QColor("#222222")
 
-        # ── Background circle — obsidian surface disc ──
-        glow_alpha = int(255 * (0.25 if self._is_hovered else self._glow_opacity * 0.12))
-        bg = QRadialGradient(QPointF(cx, cy), w / 2 - 2)
-        bg.setColorAt(0, QColor(30, 26, 20, glow_alpha + 60))
-        bg.setColorAt(0.85, QColor(22, 20, 16, glow_alpha + 40))
-        bg.setColorAt(1.0, QColor(ORANGE.red(), ORANGE.green(), ORANGE.blue(), glow_alpha))
+        p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QBrush(bg))
+        p.drawEllipse(QRectF(cx - r, cy - r, r * 2, r * 2))
 
-        pen_color = QColor(ORANGE) if self._is_hovered else QColor(BORDER)
-        if self._is_hovered:
-            pen_color.setAlpha(220)
-        p.setPen(QPen(pen_color, 1.5))
-        p.drawEllipse(QRectF(2, 2, w - 4, h - 4))
-
-        # ── Panther head silhouette (Stitch: sharp angular, facing right) ──
-        pen_color = AMBER if self._is_hovered else ORANGE
-        p.setPen(QPen(pen_color, 2.0))
+        # ── Arrow icon (↑) ──
+        arrow_color = QColor("#ffffff") if self._is_hovered else QColor("#e0e0e0")
+        p.setPen(QPen(arrow_color, 2.2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
         p.setBrush(Qt.BrushStyle.NoBrush)
 
-        head = QPainterPath()
-        # Left ear — sharp triangular
-        head.moveTo(cx - 10, cy - 4)
-        head.lineTo(cx - 8, cy - 13)
-        head.lineTo(cx - 4, cy - 7)
-        # Forehead bridge
-        head.lineTo(cx + 1, cy - 9)
-        # Right ear — sharp triangular
-        head.lineTo(cx + 5, cy - 13)
-        head.lineTo(cx + 9, cy - 4)
-        # Right cheek → snout
-        head.lineTo(cx + 11, cy - 1)
-        head.lineTo(cx + 14, cy + 1)  # nose tip → send direction
-        # Jaw line
-        head.lineTo(cx + 10, cy + 5)
-        head.lineTo(cx + 5, cy + 8)
-        head.lineTo(cx - 2, cy + 8)
-        head.lineTo(cx - 8, cy + 4)
-        head.closeSubpath()
-        p.drawPath(head)
-
-        # ── Eyes — glowing amber dots ──
-        eye_color = GOLD if self._is_hovered else AMBER
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(eye_color))
-        # Left eye
-        p.drawEllipse(QPointF(cx - 4, cy - 1), 2.0, 1.5)
-        # Right eye
-        p.drawEllipse(QPointF(cx + 5, cy - 1), 2.0, 1.5)
-
-        # ── Eye glow halo (tiny) ──
-        if self._is_hovered:
-            eye_glow = QColor(GOLD)
-            eye_glow.setAlpha(60)
-            p.setBrush(QBrush(eye_glow))
-            p.drawEllipse(QPointF(cx - 4, cy - 1), 3.5, 3.0)
-            p.drawEllipse(QPointF(cx + 5, cy - 1), 3.5, 3.0)
-
-        # ── Nose bridge accent line ──
-        p.setPen(QPen(pen_color, 1.2))
-        p.drawLine(QPointF(cx, cy - 6), QPointF(cx + 1, cy + 1))
-
-        # ── Send arrow accent (hover only — Stitch gold arrow) ──
-        if self._is_hovered:
-            p.setPen(QPen(GOLD, 1.8))
-            p.drawLine(QPointF(cx + 13, cy + 1), QPointF(cx + 18, cy + 1))
-            p.drawLine(QPointF(cx + 16, cy - 2), QPointF(cx + 18, cy + 1))
-            p.drawLine(QPointF(cx + 16, cy + 4), QPointF(cx + 18, cy + 1))
+        # Vertical line
+        p.drawLine(QPointF(cx, cy + 7), QPointF(cx, cy - 6))
+        # Arrow head  (V shape pointing up)
+        p.drawLine(QPointF(cx - 5, cy - 1), QPointF(cx, cy - 7))
+        p.drawLine(QPointF(cx + 5, cy - 1), QPointF(cx, cy - 7))
 
         p.end()
 
 
 class PantherMicButton(QPushButton):
-    """Microphone button — concentric sound rings + panther icon.
+    """Microphone button — minimalist mic capsule icon.
 
-    Stitch-informed design:
-      • Idle: minimalist mic capsule in orange outline
-      • Hover: border brightens + subtle orange fill
-      • Checked (recording): pulsating concentric rings radiate outward,
-        mic transforms to open-mouth roar icon
+    Design:
+      • Transparent background, subtle border on hover
+      • Clean mic icon in muted gray, brightens on hover
+      • Recording: orange pulsating rings + icon turns gold
       • Plays panther roar sound on activation (if available)
     """
 
     def __init__(self, parent=None):
         super().__init__("", parent)
-        self.setFixedSize(44, 44)
+        self.setFixedSize(36, 36)
         self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip("Click to speak")
+        self.setToolTip("Hold to speak")
 
         self._ring_phase = 0.0
         self._is_hovered = False
@@ -222,7 +164,7 @@ class PantherMicButton(QPushButton):
                 self._player.setSource(QUrl.fromLocalFile(str(roar_path)))
                 self._player.play()
         except ImportError:
-            pass  # multimedia module not available
+            pass
 
     def enterEvent(self, event):
         self._is_hovered = True
@@ -235,9 +177,7 @@ class PantherMicButton(QPushButton):
         super().leaveEvent(event)
 
     def nextCheckState(self):
-        """Push-to-talk: checked state is controlled externally via
-        setChecked() from the MainWindow pressed/released handlers.
-        Prevent QPushButton from auto-toggling on click."""
+        """Push-to-talk: checked state controlled externally."""
         pass
 
     def paintEvent(self, event):
@@ -248,119 +188,98 @@ class PantherMicButton(QPushButton):
         cx, cy = w / 2, h / 2
         is_recording = self.isChecked()
 
-        # ── Outer glow halo (recording or hover) ──
-        if is_recording or self._is_hovered:
-            halo = QRadialGradient(QPointF(cx, cy), w / 2)
-            alpha = 50 if is_recording else 30
-            halo.setColorAt(0.5, QColor(255, 107, 53, alpha))
-            halo.setColorAt(1.0, QColor(255, 107, 53, 0))
+        # ── Subtle hover circle ──
+        if self._is_hovered or is_recording:
+            bg_alpha = 30 if is_recording else 15
+            bg = QColor(255, 107, 53, bg_alpha)
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QBrush(halo))
-            p.drawEllipse(QRectF(0, 0, w, h))
+            p.setBrush(QBrush(bg))
+            p.drawEllipse(QRectF(2, 2, w - 4, h - 4))
 
-        # ── Background circle ──
+        # ── Pulsating rings (recording only) ──
         if is_recording:
-            pulse = 0.15 + 0.10 * math.sin(self._ring_phase * 2)
-            bg_color = QColor(ORANGE)
-            bg_color.setAlpha(int(255 * pulse))
-        elif self._is_hovered:
-            bg_color = QColor(ORANGE)
-            bg_color.setAlpha(20)
-        else:
-            bg_color = QColor(0, 0, 0, 0)
-
-        p.setBrush(QBrush(bg_color))
-        border_color = ORANGE if (is_recording or self._is_hovered) else BORDER
-        p.setPen(QPen(border_color, 1.5))
-        p.drawEllipse(QRectF(2, 2, w - 4, h - 4))
-
-        # ── Concentric rings (Stitch: gradient-faded expanding rings) ──
-        if is_recording:
-            for i in range(4):
-                # Each ring fades as it expands — like a roar radiating out
-                phase_offset = self._ring_phase + i * 1.2
-                ring_progress = (phase_offset % 3.0) / 3.0  # 0→1 cycle
-                ring_alpha = max(0, int(200 * (1 - ring_progress)))
-                ring_color = QColor(ORANGE_LIGHT if i % 2 == 0 else ORANGE)
-                ring_color.setAlpha(ring_alpha)
-                p.setPen(QPen(ring_color, 1.5 - ring_progress * 0.8))
+            for i in range(3):
+                phase_offset = self._ring_phase + i * 1.0
+                progress = (phase_offset % 2.5) / 2.5
+                alpha = max(0, int(150 * (1 - progress)))
+                ring_color = QColor(ORANGE_LIGHT)
+                ring_color.setAlpha(alpha)
+                p.setPen(QPen(ring_color, 1.2 - progress * 0.6))
                 p.setBrush(Qt.BrushStyle.NoBrush)
-                radius = 10 + ring_progress * 14
+                radius = 8 + progress * 10
                 p.drawEllipse(QPointF(cx, cy), radius, radius)
 
-        # ── Icon ──
-        icon_color = AMBER if self._is_hovered else ORANGE
-        p.setPen(QPen(icon_color, 1.8))
+        # ── Mic icon ──
+        if is_recording:
+            icon_color = GOLD
+            pen_width = 2.0
+        elif self._is_hovered:
+            icon_color = WHITE
+            pen_width = 1.8
+        else:
+            icon_color = MUTED
+            pen_width = 1.6
+
+        p.setPen(QPen(icon_color, pen_width))
         p.setBrush(Qt.BrushStyle.NoBrush)
 
         if is_recording:
-            # Open mouth / roar shape (Stitch: fangs visible)
+            # Roar mouth shape
             p.setPen(QPen(GOLD, 2.0))
             mouth = QPainterPath()
-            mouth.moveTo(cx - 7, cy - 3)
-            # Upper jaw with fangs
-            mouth.lineTo(cx - 4, cy - 7)   # left fang tip
-            mouth.lineTo(cx - 2, cy - 4)
-            mouth.lineTo(cx + 2, cy - 4)
-            mouth.lineTo(cx + 4, cy - 7)   # right fang tip
-            mouth.lineTo(cx + 7, cy - 3)
-            # Cheek
-            mouth.lineTo(cx + 8, cy + 1)
-            # Lower jaw
-            mouth.lineTo(cx + 4, cy + 5)
+            mouth.moveTo(cx - 6, cy - 2)
+            mouth.lineTo(cx - 3, cy - 6)
+            mouth.lineTo(cx, cy - 4)
+            mouth.lineTo(cx + 3, cy - 6)
+            mouth.lineTo(cx + 6, cy - 2)
+            mouth.lineTo(cx + 7, cy + 2)
+            mouth.lineTo(cx + 3, cy + 5)
             mouth.lineTo(cx, cy + 6)
-            mouth.lineTo(cx - 4, cy + 5)
-            mouth.lineTo(cx - 8, cy + 1)
+            mouth.lineTo(cx - 3, cy + 5)
+            mouth.lineTo(cx - 7, cy + 2)
             mouth.closeSubpath()
             p.drawPath(mouth)
 
-            # Center tongue/throat line
+            # Center line
             p.setPen(QPen(AMBER, 1.0))
             p.drawLine(QPointF(cx, cy - 2), QPointF(cx, cy + 3))
         else:
-            # Minimalist mic capsule (Stitch: clean rounded rect + arc)
+            # Clean mic capsule
             mic = QPainterPath()
-            mic.addRoundedRect(QRectF(cx - 4, cy - 10, 8, 13), 4, 4)
+            mic.addRoundedRect(QRectF(cx - 3.5, cy - 8, 7, 11), 3.5, 3.5)
             p.drawPath(mic)
             # Stand
-            p.drawLine(QPointF(cx, cy + 3), QPointF(cx, cy + 8))
-            p.drawLine(QPointF(cx - 5, cy + 8), QPointF(cx + 5, cy + 8))
+            p.drawLine(QPointF(cx, cy + 3), QPointF(cx, cy + 7))
+            p.drawLine(QPointF(cx - 4, cy + 7), QPointF(cx + 4, cy + 7))
             # Pickup arc
-            arc_rect = QRectF(cx - 7, cy - 1, 14, 10)
+            arc_rect = QRectF(cx - 6, cy - 1, 12, 8)
             p.drawArc(arc_rect, 0, 180 * 16)
 
         p.end()
 
 
 class PantherAttachButton(QPushButton):
-    """Attachment button — paperclip → panther eye morph.
+    """Attachment button — clean + icon (Grok-accurate).
 
-    Stitch-informed design:
-      • Default: muted warm gray paperclip icon (#8a8078)
-      • Hover: paperclip brightens to orange
-      • Active (has files): smooth morph to panther eye with:
-        - Almond-shaped eye outline in orange (#FF6B35)
-        - Amber iris gradient (#FFB347)
-        - Gold vertical slit pupil (#FFD700)
-        - Hover: pupil dilates smoothly
-        - Tiny highlight dot for realism
+    Design:
+      • Default: muted gray + icon
+      • Hover: brightens to white
+      • Active (files attached): morphs to panther eye with iris gradient
     """
 
     def __init__(self, parent=None):
         super().__init__("", parent)
-        self.setFixedSize(44, 44)
+        self.setFixedSize(36, 36)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip("Attach files (images, documents, videos)")
+        self.setToolTip("Attach files")
 
         self._has_files = False
         self._is_hovered = False
-        self._pupil_dilation = 0.0  # 0 = closed slit, 1 = dilated
+        self._pupil_dilation = 0.0
 
-        # Pupil animation
         self._pupil_anim = QPropertyAnimation(self, b"pupilDilation")
         self._pupil_anim.setDuration(300)
 
-    # Property for animation
     def _get_pupil_dilation(self) -> float:
         return self._pupil_dilation
 
@@ -371,14 +290,13 @@ class PantherAttachButton(QPushButton):
     pupilDilation = pyqtProperty(float, _get_pupil_dilation, _set_pupil_dilation)
 
     def set_has_files(self, has_files: bool):
-        """Switch between paperclip and panther eye modes."""
+        """Switch between + icon and panther eye modes."""
         self._has_files = has_files
         self.update()
 
     def enterEvent(self, event):
         self._is_hovered = True
         if self._has_files:
-            # Dilate pupil on hover
             self._pupil_anim.stop()
             self._pupil_anim.setStartValue(self._pupil_dilation)
             self._pupil_anim.setEndValue(0.8)
@@ -389,7 +307,6 @@ class PantherAttachButton(QPushButton):
     def leaveEvent(self, event):
         self._is_hovered = False
         if self._has_files:
-            # Contract pupil
             self._pupil_anim.stop()
             self._pupil_anim.setStartValue(self._pupil_dilation)
             self._pupil_anim.setEndValue(0.2)
@@ -404,108 +321,73 @@ class PantherAttachButton(QPushButton):
         w, h = self.width(), self.height()
         cx, cy = w / 2, h / 2
 
-        # ── Outer glow (when files attached or hover) ──
-        if self._has_files or self._is_hovered:
-            halo = QRadialGradient(QPointF(cx, cy), w / 2)
-            alpha = 40 if self._has_files else 20
-            halo.setColorAt(0.5, QColor(255, 107, 53, alpha))
-            halo.setColorAt(1.0, QColor(255, 107, 53, 0))
+        # ── Subtle hover background ──
+        if self._is_hovered:
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QBrush(halo))
-            p.drawEllipse(QRectF(0, 0, w, h))
-
-        # ── Background circle ──
-        glow = 0.15 if self._is_hovered else (0.10 if self._has_files else 0.03)
-        bg = QColor(ORANGE)
-        bg.setAlpha(int(255 * glow))
-        p.setBrush(QBrush(bg))
-        border_color = ORANGE if (self._is_hovered or self._has_files) else BORDER
-        p.setPen(QPen(border_color, 1.5))
-        p.drawEllipse(QRectF(2, 2, w - 4, h - 4))
+            p.setBrush(QBrush(QColor(255, 255, 255, 12)))
+            p.drawEllipse(QRectF(2, 2, w - 4, h - 4))
 
         if self._has_files:
             self._draw_panther_eye(p, cx, cy)
         else:
-            self._draw_paperclip(p, cx, cy)
+            self._draw_plus_icon(p, cx, cy)
 
         p.end()
 
-    def _draw_paperclip(self, p: QPainter, cx: float, cy: float):
-        """Draw a minimalist paperclip icon (Stitch: muted gray, brightens on hover)."""
-        # Stitch design: default is muted gray, hover brightens it
-        color = AMBER if self._is_hovered else MUTED
-        p.setPen(QPen(color, 2.0))
+    def _draw_plus_icon(self, p: QPainter, cx: float, cy: float):
+        """Draw a clean + icon (Grok-style attachment button)."""
+        if self._is_hovered:
+            color = QColor("#e0e0e0")
+            pen_width = 2.2
+        else:
+            color = QColor("#888888")
+            pen_width = 2.0
+
+        p.setPen(QPen(color, pen_width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         p.setBrush(Qt.BrushStyle.NoBrush)
 
-        # Clean paperclip shape — elongated loop
-        clip = QPainterPath()
-        clip.moveTo(cx + 2, cy + 9)
-        clip.lineTo(cx + 2, cy - 5)
-        clip.arcTo(QRectF(cx - 4, cy - 11, 12, 12), 0, 180)
-        clip.lineTo(cx - 4, cy + 5)
-        clip.arcTo(QRectF(cx - 7, cy + 1, 6, 8), 0, -180)
-        clip.lineTo(cx - 4, cy - 3)
-        clip.arcTo(QRectF(cx - 4, cy - 7, 8, 8), 180, -180)
-        p.drawPath(clip)
-
-        # Add tiny "+" indicator
-        if self._is_hovered:
-            p.setPen(QPen(GOLD, 1.5))
-            p.drawLine(QPointF(cx + 10, cy - 6), QPointF(cx + 10, cy - 2))
-            p.drawLine(QPointF(cx + 8, cy - 4), QPointF(cx + 12, cy - 4))
+        size = 7  # half-length of each cross arm
+        # Vertical line
+        p.drawLine(QPointF(cx, cy - size), QPointF(cx, cy + size))
+        # Horizontal line
+        p.drawLine(QPointF(cx - size, cy), QPointF(cx + size, cy))
 
     def _draw_panther_eye(self, p: QPainter, cx: float, cy: float):
-        """Draw panther eye with vertical slit pupil (Stitch: almond + iris gradient)."""
-        # ── Outer eye shape (almond) ──
+        """Draw panther eye with vertical slit pupil."""
+        # Outer glow
+        if self._is_hovered:
+            halo = QRadialGradient(QPointF(cx, cy), 18)
+            halo.setColorAt(0.4, QColor(255, 107, 53, 40))
+            halo.setColorAt(1.0, QColor(255, 107, 53, 0))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(halo))
+            p.drawEllipse(QRectF(0, 0, self.width(), self.height()))
+
+        # Eye outline
         eye_pen_color = AMBER if self._is_hovered else ORANGE
-        p.setPen(QPen(eye_pen_color, 2.0))
+        p.setPen(QPen(eye_pen_color, 1.8))
 
-        # Iris glow gradient (Stitch: warm amber center → orange edge)
-        iris_gradient = QRadialGradient(QPointF(cx, cy), 11)
-        iris_gradient.setColorAt(0, QColor(255, 215, 0, 140))   # gold center
-        iris_gradient.setColorAt(0.4, QColor(255, 179, 71, 120))  # amber
-        iris_gradient.setColorAt(0.8, QColor(255, 107, 53, 80))   # orange
-        iris_gradient.setColorAt(1, QColor(255, 107, 53, 30))     # fade
-        p.setBrush(QBrush(iris_gradient))
+        # Iris gradient
+        iris = QRadialGradient(QPointF(cx, cy), 10)
+        iris.setColorAt(0, QColor(255, 215, 0, 120))
+        iris.setColorAt(0.4, QColor(255, 179, 71, 100))
+        iris.setColorAt(0.8, QColor(255, 107, 53, 60))
+        iris.setColorAt(1, QColor(255, 107, 53, 20))
+        p.setBrush(QBrush(iris))
 
-        # Smooth almond eye using cubic bezier
+        # Almond eye shape
         eye = QPainterPath()
-        eye.moveTo(cx - 14, cy)
-        eye.cubicTo(
-            QPointF(cx - 7, cy - 10),
-            QPointF(cx + 7, cy - 10),
-            QPointF(cx + 14, cy)
-        )
-        eye.cubicTo(
-            QPointF(cx + 7, cy + 10),
-            QPointF(cx - 7, cy + 10),
-            QPointF(cx - 14, cy)
-        )
+        eye.moveTo(cx - 12, cy)
+        eye.cubicTo(QPointF(cx - 6, cy - 8), QPointF(cx + 6, cy - 8), QPointF(cx + 12, cy))
+        eye.cubicTo(QPointF(cx + 6, cy + 8), QPointF(cx - 6, cy + 8), QPointF(cx - 12, cy))
         p.drawPath(eye)
 
-        # ── Vertical slit pupil (dilates on hover via animation) ──
-        pupil_width = 1.5 + self._pupil_dilation * 5.5
+        # Pupil slit
+        pupil_w = 1.2 + self._pupil_dilation * 4.5
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(DARK))
-        pupil = QPainterPath()
-        pupil.addEllipse(QPointF(cx, cy), pupil_width, 7.5)
-        p.drawPath(pupil)
+        p.setBrush(QBrush(QColor("#0A0A0A")))
+        p.drawEllipse(QPointF(cx, cy), pupil_w, 6)
 
-        # Inner pupil slit highlight
-        inner_slit = QColor(DARK)
-        inner_slit.setAlpha(200)
-        p.setBrush(QBrush(inner_slit))
-        p.drawEllipse(QPointF(cx, cy), max(1.0, pupil_width * 0.5), 6)
-
-        # ── Catchlight — Stitch: tiny white reflection dot ──
-        p.setBrush(QBrush(QColor(255, 255, 255, 200)))
-        p.drawEllipse(QPointF(cx - 3, cy - 3), 1.8, 1.8)
-        # Secondary smaller catchlight
-        p.setBrush(QBrush(QColor(255, 255, 255, 100)))
-        p.drawEllipse(QPointF(cx + 2, cy + 2), 1.0, 1.0)
-
-        # ── Corner accents (inner corner of eye — tear duct detail) ──
-        if self._is_hovered:
-            p.setPen(QPen(GOLD, 1.2))
-            p.drawLine(QPointF(cx - 13, cy), QPointF(cx - 16, cy))
-            p.drawLine(QPointF(cx + 13, cy), QPointF(cx + 16, cy))
+        # Catchlight
+        p.setBrush(QBrush(QColor(255, 255, 255, 180)))
+        p.drawEllipse(QPointF(cx - 2.5, cy - 2.5), 1.5, 1.5)

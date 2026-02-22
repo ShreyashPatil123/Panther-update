@@ -56,14 +56,24 @@ class AgentOrchestrator:
         logger.info("Initializing agent orchestrator")
         await self.memory.initialize()
 
-        # Initialize API client if a real key is available from .env
-        if self.config.nvidia_api_key and self.config.nvidia_api_key != "your_api_key_here":
+        # Initialize API client
+        if self.config.ollama_enabled:
+            # Use Ollama local server
+            self.set_api_key("ollama", base_url=self.config.ollama_base_url)
+            self.config.default_model = self.config.ollama_model
+            logger.info(f"Ollama mode: {self.config.ollama_base_url} / {self.config.ollama_model}")
+        elif self.config.nvidia_api_key and self.config.nvidia_api_key != "your_api_key_here":
             self.set_api_key(self.config.nvidia_api_key)
 
         logger.info("Agent orchestrator initialized successfully")
 
-    def set_api_key(self, api_key: str):
-        """Set NVIDIA API key and initialize/reinitialize client."""
+    def set_api_key(self, api_key: str, base_url: str = None):
+        """Set API key and initialize/reinitialize client.
+
+        Args:
+            api_key: API key (use 'ollama' for local Ollama).
+            base_url: Optional base URL override (e.g. for Ollama).
+        """
         # Close existing client if present
         if self.nvidia_client is not None:
             try:
@@ -72,11 +82,12 @@ class AgentOrchestrator:
                 pass
 
         self.config.nvidia_api_key = api_key
+        url = base_url or self.config.nvidia_base_url
         self.nvidia_client = NVIDIAClient(
             api_key=api_key,
-            base_url=self.config.nvidia_base_url,
+            base_url=url,
         )
-        logger.info("NVIDIA API client initialized")
+        logger.info(f"API client initialized with base URL: {url}")
 
     def set_task_category(self, category: Optional[TaskCategory]):
         """Switch to a task-specific model and system prompt.
@@ -167,6 +178,9 @@ class AgentOrchestrator:
                 message,
                 session_id=self.current_session_id,
             )
+
+            # Auto-title session from first user message
+            await self._auto_title_session(message)
 
             # Retrieve relevant semantic context
             context = await self.memory.get_relevant_context(
@@ -1016,6 +1030,33 @@ Guidelines:
         self.current_session_id = session_id
         logger.info(f"Created new session: {session_id}")
         return session_id
+
+    async def _auto_title_session(self, message: str):
+        """Auto-generate a session title from the first user message.
+
+        Only titles sessions that still have the default 'Session xxxx' name.
+        """
+        try:
+            sessions = await self.memory.get_sessions(limit=50)
+            current = next(
+                (s for s in sessions if s["id"] == self.current_session_id), None
+            )
+            if not current:
+                return
+            title = current.get("title", "")
+            # Only auto-title if still using default name
+            if title and not title.startswith("Session "):
+                return
+            # Generate short title from message
+            short = message.strip()
+            if len(short) > 40:
+                short = short[:40].rsplit(" ", 1)[0] + "…"
+            if short:
+                await self.memory.update_session_title(
+                    self.current_session_id, short
+                )
+        except Exception as e:
+            logger.debug(f"Auto-title failed (non-critical): {e}")
 
     async def get_sessions(self) -> List[Dict[str, Any]]:
         """Get list of sessions."""

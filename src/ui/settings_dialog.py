@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -54,6 +55,8 @@ class SettingsDialog(QDialog):
         # API tab
         self.api_tab = self._create_api_tab()
         self.tabs.addTab(self.api_tab, "API")
+        # Hide Ollama fields initially (must happen after self.api_tab is set)
+        self._toggle_ollama_fields(False)
 
         # Model tab
         self.model_tab = self._create_model_tab()
@@ -142,6 +145,62 @@ class SettingsDialog(QDialog):
         google_note = QLabel("Used for Gemini Live voice conversations")
         google_note.setStyleSheet("color: #8a8078; font-size: 11px; padding-left: 2px;")
         layout.addRow("", google_note)
+
+        # ── Ollama Section ──
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.Shape.HLine)
+        sep2.setStyleSheet("color: #3a2a18; max-height: 2px; margin: 18px 0 8px 0;")
+        layout.addRow("", sep2)
+
+        ollama_header = QLabel("🦙  Ollama — Local Models")
+        ollama_header.setStyleSheet(
+            "color: #e8a025; font-size: 14px; font-weight: 700; "
+            "padding: 4px 0 2px 0; background: transparent;"
+        )
+        layout.addRow("", ollama_header)
+
+        self.ollama_enabled_check = QCheckBox("Enable Ollama (use local models instead of NVIDIA)")
+        self.ollama_enabled_check.setStyleSheet(
+            "color: #ccc; font-size: 13px; padding: 4px 0;"
+        )
+        self.ollama_enabled_check.toggled.connect(self._toggle_ollama_fields)
+        layout.addRow("", self.ollama_enabled_check)
+
+        self.ollama_url_input = QLineEdit()
+        self.ollama_url_input.setPlaceholderText("http://localhost:11434/v1")
+        self.ollama_url_input.setText("http://localhost:11434/v1")
+        layout.addRow("Ollama URL:", self.ollama_url_input)
+
+        self.ollama_model_input = QLineEdit()
+        self.ollama_model_input.setPlaceholderText("e.g. llama3, mistral, codellama, phi3")
+        layout.addRow("Ollama Model:", self.ollama_model_input)
+
+        self.ollama_test_btn = QPushButton("⚡  Test Ollama Connection")
+        self.ollama_test_btn.clicked.connect(self._test_ollama_connection)
+        layout.addRow("", self.ollama_test_btn)
+
+        self.ollama_status_label = QLabel("Not configured")
+        self.ollama_status_label.setStyleSheet("color: #888; padding: 2px 0;")
+        layout.addRow("Ollama Status:", self.ollama_status_label)
+
+        ollama_note = QLabel(
+            "Ollama runs models locally — no API key needed.\n"
+            "Install from ollama.com  ·  Start with: ollama serve\n"
+            "When enabled, overrides NVIDIA API for chat completions."
+        )
+        ollama_note.setStyleSheet(
+            "color: #8a8078; font-size: 11px; padding: 4px 0 2px 2px; line-height: 1.4;"
+        )
+        ollama_note.setWordWrap(True)
+        layout.addRow("", ollama_note)
+
+        # Initially hide Ollama fields
+        self._ollama_widgets = [
+            self.ollama_url_input, self.ollama_model_input,
+            self.ollama_test_btn, self.ollama_status_label, ollama_note,
+        ]
+        # NOTE: _toggle_ollama_fields is called from _setup_ui AFTER
+        #       self.api_tab is assigned, to avoid AttributeError.
 
         return widget
 
@@ -567,6 +626,12 @@ class SettingsDialog(QDialog):
         else:
             self.model_combo.setCurrentText(config.default_model)
 
+        # Ollama
+        self.ollama_enabled_check.setChecked(config.ollama_enabled)
+        self.ollama_url_input.setText(config.ollama_base_url)
+        self.ollama_model_input.setText(config.ollama_model)
+        self._toggle_ollama_fields(config.ollama_enabled)
+
     def _toggle_api_key_visibility(self, checked: bool):
         """Toggle API key visibility."""
         if checked:
@@ -584,6 +649,70 @@ class SettingsDialog(QDialog):
         else:
             self.google_api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
             self.show_google_key_btn.setText("Show")
+
+    def _toggle_ollama_fields(self, enabled: bool):
+        """Show/hide Ollama configuration fields."""
+        for w in self._ollama_widgets:
+            w.setVisible(enabled)
+        # Also hide the QFormLayout row labels
+        if not hasattr(self, 'api_tab'):
+            return
+        form = self.api_tab.layout()
+        if form:
+            for i in range(form.rowCount()):
+                label_item = form.itemAt(i, QFormLayout.ItemRole.LabelRole)
+                field_item = form.itemAt(i, QFormLayout.ItemRole.FieldRole)
+                if field_item and field_item.widget() in self._ollama_widgets:
+                    if label_item and label_item.widget():
+                        label_item.widget().setVisible(enabled)
+
+    def _test_ollama_connection(self):
+        """Test Ollama connection."""
+        url = self.ollama_url_input.text().strip() or "http://localhost:11434/v1"
+        self.ollama_test_btn.setEnabled(False)
+        self.ollama_test_btn.setText("Testing...")
+        self.ollama_status_label.setText("Testing...")
+        self.ollama_status_label.setStyleSheet("color: #FFA500;")
+        asyncio.create_task(self._do_test_ollama(url))
+
+    async def _do_test_ollama(self, url: str):
+        """Perform Ollama connection test."""
+        import httpx as _httpx
+        try:
+            async with _httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(f"{url.rstrip('/')}/models")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    models = [m.get('id', m.get('name', '?')) for m in data.get('models', data.get('data', []))]
+                    count = len(models)
+                    self.ollama_status_label.setText(f"Connected ({count} models)")
+                    self.ollama_status_label.setStyleSheet("color: #4CAF50;")
+                    model_list = ', '.join(models[:8])
+                    if count > 8:
+                        model_list += f' ... +{count - 8} more'
+                    QMessageBox.information(
+                        self, "Ollama Connected",
+                        f"Ollama is running!\n\nModels: {model_list}"
+                    )
+                else:
+                    self.ollama_status_label.setText(f"HTTP {resp.status_code}")
+                    self.ollama_status_label.setStyleSheet("color: #FF4500;")
+        except _httpx.ConnectError:
+            self.ollama_status_label.setText("Connection failed")
+            self.ollama_status_label.setStyleSheet("color: #FF4500;")
+            QMessageBox.warning(
+                self, "Ollama Not Found",
+                "Could not connect to Ollama.\n\n"
+                "Make sure Ollama is running:\n"
+                "  ollama serve\n\n"
+                f"URL tried: {url}"
+            )
+        except Exception as e:
+            self.ollama_status_label.setText(f"Error: {str(e)[:40]}")
+            self.ollama_status_label.setStyleSheet("color: #FF4500;")
+        finally:
+            self.ollama_test_btn.setEnabled(True)
+            self.ollama_test_btn.setText("Test Ollama Connection")
 
     def _browse_db_path(self):
         """Browse for database path."""
@@ -726,6 +855,22 @@ class SettingsDialog(QDialog):
         if model:
             self.orchestrator.config.default_model = model
             self._update_env_file("DEFAULT_MODEL", model)
+
+        # Ollama settings
+        config.ollama_enabled = self.ollama_enabled_check.isChecked()
+        ollama_url = self.ollama_url_input.text().strip() or "http://localhost:11434/v1"
+        config.ollama_base_url = ollama_url
+        ollama_model = self.ollama_model_input.text().strip() or "llama3"
+        config.ollama_model = ollama_model
+        self._update_env_file("OLLAMA_ENABLED", str(config.ollama_enabled).lower())
+        self._update_env_file("OLLAMA_BASE_URL", ollama_url)
+        self._update_env_file("OLLAMA_MODEL", ollama_model)
+
+        # When Ollama is enabled, swap the API client to point at Ollama
+        if config.ollama_enabled:
+            self.orchestrator.set_api_key("ollama", base_url=ollama_url)
+            config.default_model = ollama_model
+            self._update_env_file("DEFAULT_MODEL", ollama_model)
 
         # Update status
         if self.orchestrator.is_ready:

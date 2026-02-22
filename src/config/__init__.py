@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     encrypt_storage: bool = Field(default=True, alias="ENCRYPT_STORAGE")
     local_processing_only: bool = Field(default=False, alias="LOCAL_PROCESSING_ONLY")
 
+    # Ollama (local model server)
+    ollama_enabled: bool = Field(default=False, alias="OLLAMA_ENABLED")
+    ollama_base_url: str = Field(default="http://localhost:11434/v1", alias="OLLAMA_BASE_URL")
+    ollama_model: str = Field(default="llama3", alias="OLLAMA_MODEL")
+
     # UI Settings
     window_width: int = 1400
     window_height: int = 900

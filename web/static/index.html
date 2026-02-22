@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PANTHER — AI Agent</title>
+    <meta
+      name="description"
+      content="PANTHER: AI Agent powered by NVIDIA NIM — luxury dark interface"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <!-- marked.js for markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- highlight.js for code syntax -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css"
+    />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <link rel="stylesheet" href="/static/css/main.css" />
+  </head>
+  <body>
+    <!-- ═══════════════════════════════════════════
+       SIDEBAR
+  ══════════════════════════════════════════════ -->
+    <aside class="sidebar" id="sidebar">
+      <!-- Brand -->
+      <div class="sidebar-brand">
+        <div class="brand-icon">
+          <img src="/static/panther-logo.jpg" alt="PANTHER" class="brand-logo-img" />
+        </div>
+        <span class="brand-name">PANTHER</span>
+      </div>
+
+      <!-- New Chat -->
+      <button class="new-chat-btn" id="newChatBtn" title="New Chat">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+        New Chat
+      </button>
+
+      <!-- History -->
+      <div class="sidebar-section-label">History</div>
+      <div class="history-list" id="historyList">
+        <div class="history-empty" id="historyEmpty">No conversations yet</div>
+      </div>
+
+      <!-- Bottom actions -->
+      <div class="sidebar-bottom">
+        <button class="icon-btn" id="settingsBtn" title="Settings">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="12" cy="12" r="3" />
+            <path
+              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+            />
+          </svg>
+        </button>
+      </div>
+    </aside>
+
+    <!-- ═══════════════════════════════════════════
+       MAIN CONTENT
+  ══════════════════════════════════════════════ -->
+    <main class="main-content" id="mainContent">
+      <!-- Status bar -->
+      <div class="status-bar" id="statusBar">
+        <div class="status-left">
+          <div class="status-dot" id="statusDot"></div>
+          <span class="status-text" id="statusText">Connecting…</span>
+          <div class="model-badge" id="modelBadge"></div>
+        </div>
+        <!-- Shiny Models button (center) -->
+        <button class="shiny-cta" id="modelsBtn" title="Switch AI model">
+          <span>Models</span>
+        </button>
+        <!-- Gemini Live rainbow button -->
+        <button class="rainbow-btn" id="geminiLiveBtn" title="Launch Gemini Live voice session">
+          <span class="rainbow-btn-content">❖ Gemini Live</span>
+        </button>
+      </div>
+
+      <!-- Model picker panel -->
+      <div class="model-picker" id="modelPicker" hidden>
+        <div class="model-picker-header">
+          <span class="model-picker-title">Select Model</span>
+          <span class="model-picker-stats" id="modelPickerStats"></span>
+          <button class="model-picker-close" id="modelPickerClose">×</button>
+        </div>
+        <div class="model-search-wrap">
+          <svg class="model-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input class="model-search" id="modelSearch" type="text" placeholder="Search models…" autocomplete="off" />
+        </div>
+        <div class="model-provider-tabs" id="modelProviderTabs">
+          <button class="mprov-tab active" data-prov="all">All</button>
+          <button class="mprov-tab" data-prov="nvidia">NVIDIA</button>
+          <button class="mprov-tab" data-prov="ollama">Ollama</button>
+          <button class="mprov-tab" data-prov="gemini">Gemini</button>
+        </div>
+        <div class="model-list" id="modelList">
+          <div class="model-loading" id="modelLoading">Fetching models…</div>
+        </div>
+      </div>
+
+      <!-- Hero (shown before first message) -->
+      <section class="hero" id="hero">
+        <div class="hero-inner">
+          <div class="hero-logo">
+            <img src="/static/panther-logo.jpg" alt="PANTHER" class="hero-logo-img" />
+          </div>
+          <h1 class="hero-title">PANTHER</h1>
+          <p class="hero-subtitle">
+            Powered by NVIDIA NIM · Built for intelligence
+          </p>
+          <div class="hero-chips">
+            <button class="chip" data-prompt="Explain quantum computing in simple terms">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+              Explain a concept
+            </button>
+            <button class="chip" data-prompt="Write a Python script that scrapes news headlines">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              Write code
+            </button>
+            <button class="chip" data-prompt="Analyze the latest AI trends and give me a summary">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              Research a topic
+            </button>
+            <button class="chip" data-prompt="Help me plan a structured week of deep work">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M5 6h14a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>
+              Plan something
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Chat area -->
+      <section class="chat-area" id="chatArea" style="display: none">
+        <div class="messages" id="messages"></div>
+      </section>
+
+      <!-- Attachment strip -->
+      <div class="attachment-strip" id="attachmentStrip" style="display: none">
+        <div class="attachment-pills" id="attachmentPills"></div>
+      </div>
+
+      <!-- Input area -->
+      <div class="input-wrapper">
+        <div class="input-bar" id="inputBar">
+          <!-- Attach -->
+          <button
+            class="input-icon-btn attach-btn"
+            id="attachBtn"
+            title="Attach file"
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"
+              />
+            </svg>
+          </button>
+          <input type="file" id="fileInput" multiple style="display: none" />
+
+          <!-- Text -->
+          <div class="input-text-wrap">
+            <textarea
+              class="message-input"
+              id="messageInput"
+              placeholder="How can I help you today?"
+              rows="1"
+            ></textarea>
+          </div>
+
+          <!-- Category -->
+          <div class="category-wrap">
+            <button class="category-btn" id="categoryBtn">💬 Chat ∧</button>
+            <div
+              class="category-popup"
+              id="categoryPopup"
+              style="display: none"
+            ></div>
+          </div>
+
+          <!-- Send -->
+          <button class="send-btn" id="sendBtn" title="Send">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+          </button>
+        </div>
+        <div class="input-hint">Enter to send · Shift+Enter for new line</div>
+      </div>
+    </main>
+
+    <!-- ═══════════════════════════════════════════
+       SETTINGS MODAL
+  ══════════════════════════════════════════════ -->
+    <div class="modal-overlay" id="settingsOverlay" style="display: none">
+      <div class="modal" id="settingsModal">
+        <div class="modal-header">
+          <h2 class="modal-title">Settings</h2>
+          <button class="modal-close" id="settingsClose">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="settings-section">
+            <h3 class="settings-section-title">NVIDIA NIM</h3>
+            <div class="form-group">
+              <label class="form-label" for="nvdiaKey">API Key</label>
+              <input
+                type="password"
+                class="form-input"
+                id="nvdiaKey"
+                placeholder="nvapi-…"
+                autocomplete="off"
+              />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="defaultModel">Default Model</label>
+              <input
+                type="text"
+                class="form-input"
+                id="defaultModel"
+                placeholder="moonshotai/kimi-k2-thinking"
+              />
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h3 class="settings-section-title">Google Gemini (voice)</h3>
+            <div class="form-group">
+              <label class="form-label" for="googleKey">API Key</label>
+              <input
+                type="password"
+                class="form-input"
+                id="googleKey"
+                placeholder="AIza…"
+                autocomplete="off"
+              />
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h3 class="settings-section-title">Ollama (local / cloud)</h3>
+            <div class="form-group toggle-row">
+              <label class="form-label" for="ollamaToggle">Enable Ollama</label>
+              <label class="toggle">
+                <input type="checkbox" id="ollamaToggle" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="ollamaUrl">Base URL</label>
+              <input
+                type="text"
+                class="form-input"
+                id="ollamaUrl"
+                placeholder="http://localhost:11434/v1"
+              />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="ollamaModel">Model</label>
+              <input
+                type="text"
+                class="form-input"
+                id="ollamaModel"
+                placeholder="llama3"
+              />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="ollamaApiKey">
+                API Key
+                <span class="form-label-hint">(for cloud Ollama / OpenRouter / LM Studio cloud)</span>
+              </label>
+              <input
+                type="password"
+                class="form-input"
+                id="ollamaApiKey"
+                placeholder="sk-… or leave blank for local"
+                autocomplete="off"
+              />
+            </div>
+
+            <!-- Daily usage limit tracker -->
+            <div class="usage-section" id="ollamaUsageSection">
+              <div class="usage-header">
+                <span class="usage-title">📊 Daily Usage Tracker</span>
+                <button class="usage-reset-btn" id="resetUsageBtn" title="Reset today's count">Reset</button>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="ollamaLimit">Daily Request Limit</label>
+                <input
+                  type="number"
+                  class="form-input"
+                  id="ollamaLimit"
+                  placeholder="200"
+                  min="1"
+                  max="100000"
+                />
+              </div>
+              <div class="usage-bar-wrap">
+                <div class="usage-bar" id="usageBar">
+                  <div class="usage-bar-fill" id="usageBarFill"></div>
+                </div>
+                <div class="usage-stats" id="usageStats">— requests today</div>
+              </div>
+              <div class="usage-warning" id="usageWarning" style="display:none;"></div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <div class="settings-status" id="settingsStatus"></div>
+          <button class="btn-primary" id="saveSettingsBtn">
+            Save Settings
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Shader background (must load before app.js so canvas is inserted first) -->
+    <script src="/static/js/shader.js?v=4"></script>
+    <script src="/static/js/models.js"></script>
+    <script src="/static/js/app.js"></script>
+  </body>
+</html>
