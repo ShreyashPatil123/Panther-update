@@ -296,6 +296,7 @@ class NVIDIAClient:
         Returns:
             List of model identifiers
         """
+        # Verified working as of 2026-02-23
         return [
             # --- Meta Llama ---
             "meta/llama-3.1-8b-instruct",
@@ -307,7 +308,6 @@ class NVIDIAClient:
             "meta/llama-3.2-90b-vision-instruct",
             "meta/llama-3.3-70b-instruct",
             "meta/llama-4-maverick-17b-128e-instruct",
-            "meta/llama-4-scout-17b-16e-instruct",
             "meta/llama-guard-4-12b",
             "meta/llama3-70b-instruct",
             "meta/llama3-8b-instruct",
@@ -332,7 +332,6 @@ class NVIDIAClient:
             "google/gemma-2-27b-it",
             "google/gemma-3-1b-it",
             "google/gemma-3-4b-it",
-            "google/gemma-3-12b-it",
             "google/gemma-3-27b-it",
             "google/gemma-3n-e2b-it",
             "google/gemma-3n-e4b-it",
@@ -346,6 +345,7 @@ class NVIDIAClient:
             "nvidia/llama-3.1-nemotron-nano-8b-v1",
             "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
             "nvidia/llama-3.1-nemotron-safety-guard-8b-v3",
+            "nvidia/llama-3.1-nemotron-ultra-253b-v1",
             "nvidia/llama-3.3-nemotron-super-49b-v1",
             "nvidia/llama-3.3-nemotron-super-49b-v1.5",
             "nvidia/llama3-chatqa-1.5-8b",
@@ -353,16 +353,15 @@ class NVIDIAClient:
             "nvidia/nemotron-4-mini-hindi-4b-instruct",
             "nvidia/nemotron-content-safety-reasoning-4b",
             "nvidia/nemotron-mini-4b-instruct",
+            "nvidia/nemotron-nano-12b-v2-vl",
             "nvidia/nvidia-nemotron-nano-9b-v2",
             "nvidia/riva-translate-4b-instruct-v1.1",
             "nvidia/usdcode-llama-3.1-70b-instruct",
             # --- Deepseek ---
             "deepseek-ai/deepseek-r1-distill-llama-8b",
             "deepseek-ai/deepseek-r1-distill-qwen-14b",
-            "deepseek-ai/deepseek-r1-distill-qwen-32b",
             "deepseek-ai/deepseek-v3.1",
             "deepseek-ai/deepseek-v3.1-terminus",
-            "deepseek-ai/deepseek-v3.2",
             # --- Qwen ---
             "qwen/qwen2-7b-instruct",
             "qwen/qwen2.5-7b-instruct",
@@ -383,12 +382,9 @@ class NVIDIAClient:
             "microsoft/phi-3.5-mini-instruct",
             "microsoft/phi-3.5-vision-instruct",
             "microsoft/phi-4-mini-flash-reasoning",
-            "microsoft/phi-4-mini-instruct",
             "microsoft/phi-4-multimodal-instruct",
             # --- Moonshot ---
-            "moonshotai/kimi-k2-instruct",
             "moonshotai/kimi-k2-instruct-0905",
-            "moonshotai/kimi-k2-thinking",
             # --- OpenAI (open-source) ---
             "openai/gpt-oss-20b",
             "openai/gpt-oss-120b",
@@ -406,7 +402,6 @@ class NVIDIAClient:
             "stepfun-ai/step-3.5-flash",
             # --- Z-AI (Zhipu) ---
             "z-ai/glm4.7",
-            "z-ai/glm5",
             # --- ByteDance ---
             "bytedance/seed-oss-36b-instruct",
             # --- Tiiuae ---

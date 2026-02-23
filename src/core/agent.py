@@ -104,6 +104,9 @@ class AgentOrchestrator:
     def set_task_category(self, category: Optional[TaskCategory]):
         """Switch to a task-specific model and system prompt.
 
+        Preset models are all served by NVIDIA NIM, so this also ensures the
+        provider is switched back to NVIDIA when a category is selected.
+
         Args:
             category: TaskCategory to activate, or None to reset to default.
         """
@@ -117,6 +120,15 @@ class AgentOrchestrator:
         self.active_task_category = category
         self.config.default_model = preset.model
         self.task_system_prompt = preset.system_prompt
+
+        # Preset models live on NVIDIA NIM — switch provider if needed
+        if self.active_provider != "nvidia":
+            nvidia_key = self._original_nvidia_key or self.config.nvidia_api_key or ""
+            if nvidia_key and nvidia_key != "your_api_key_here":
+                self.set_api_key(nvidia_key, provider="nvidia")
+                self.config.ollama_enabled = False
+                logger.info(f"Switched provider to NVIDIA for preset '{category.value}'")
+
         logger.info(
             f"Task category set to {category.value} — model: {preset.model}"
         )

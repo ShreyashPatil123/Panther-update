@@ -12,10 +12,19 @@ router = APIRouter()
 
 # ── Provider fetchers ──────────────────────────────────────────────────────
 
+def _get_working_nvidia_models() -> set:
+    """Return set of confirmed working NVIDIA NIM model IDs."""
+    from src.api.nvidia_client import NVIDIAClient
+    # Get the curated list without needing a real API key
+    dummy = NVIDIAClient.__new__(NVIDIAClient)
+    return set(dummy.get_available_models())
+
+
 async def _fetch_nvidia_models(api_key: str, base_url: str) -> List[Dict[str, Any]]:
-    """Fetch available models from NVIDIA NIM (or any OpenAI-compat API)."""
+    """Fetch available models from NVIDIA NIM, filtered to confirmed working ones."""
     if not api_key or api_key == "your_api_key_here":
         return []
+    working_set = _get_working_nvidia_models()
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(
@@ -27,7 +36,7 @@ async def _fetch_nvidia_models(api_key: str, base_url: str) -> List[Dict[str, An
                 models = []
                 for m in data.get("data", []):
                     mid = m.get("id", "")
-                    if not mid:
+                    if not mid or mid not in working_set:
                         continue
                     models.append({
                         "id": mid,
@@ -110,8 +119,16 @@ async def _fetch_ollama_models(base_url: str, api_key: str = "") -> List[Dict[st
     return []
 
 
+_GEMINI_FREE_TIER_PREFIXES = (
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-3-flash",
+)
+
+
 async def _fetch_gemini_models(api_key: str) -> List[Dict[str, Any]]:
-    """Fetch models from Google Gemini API."""
+    """Fetch free-tier models from Google Gemini API."""
     if not api_key:
         return []
     try:
@@ -130,6 +147,9 @@ async def _fetch_gemini_models(api_key: str) -> List[Dict[str, Any]]:
                     # Only include models that support generateContent
                     supported = m.get("supportedGenerationMethods", [])
                     if "generateContent" not in supported:
+                        continue
+                    # Only keep free-tier models
+                    if not mid.startswith(_GEMINI_FREE_TIER_PREFIXES):
                         continue
                     models.append({
                         "id": mid,
@@ -150,7 +170,7 @@ async def _fetch_gemini_models(api_key: str) -> List[Dict[str, Any]]:
 def _fallback_nvidia_models() -> List[Dict[str, Any]]:
     """Return the curated hardcoded list when the API is unreachable."""
     hardcoded = [
-        # Top picks — one from each family
+        # Top picks — one from each family (verified 2026-02-23)
         "meta/llama-3.3-70b-instruct",
         "meta/llama-3.1-8b-instruct",
         "meta/llama-3.1-405b-instruct",
@@ -159,16 +179,16 @@ def _fallback_nvidia_models() -> List[Dict[str, Any]]:
         "mistralai/mistral-7b-instruct-v0.3",
         "mistralai/mixtral-8x22b-instruct-v0.1",
         "google/gemma-3-27b-it",
-        "google/gemma-3-12b-it",
+        "google/gemma-2-9b-it",
         "nvidia/llama-3.3-nemotron-super-49b-v1",
         "nvidia/llama-3.1-nemotron-nano-8b-v1",
-        "deepseek-ai/deepseek-r1-distill-qwen-32b",
-        "deepseek-ai/deepseek-v3.2",
+        "deepseek-ai/deepseek-r1-distill-qwen-14b",
+        "deepseek-ai/deepseek-v3.1",
         "qwen/qwen3-235b-a22b",
         "qwen/qwq-32b",
-        "microsoft/phi-4-mini-instruct",
+        "microsoft/phi-4-mini-flash-reasoning",
         "microsoft/phi-4-multimodal-instruct",
-        "moonshotai/kimi-k2-instruct",
+        "moonshotai/kimi-k2-instruct-0905",
     ]
     return [
         {

@@ -143,11 +143,19 @@ async def ws_chat(websocket: WebSocket, session_id: str):
                 continue
 
             if action == "set_category":
-                from src.core.model_router import TaskCategory
+                from src.core.model_router import TaskCategory, get_task_preset
                 cat_val = data.get("category", "")
                 try:
                     category = TaskCategory(cat_val) if cat_val else None
                     orchestrator.set_task_category(category)
+                    # Tell frontend which model is now active
+                    if category:
+                        preset = get_task_preset(category)
+                        await websocket.send_json({
+                            "type": "model_set",
+                            "model": preset.model,
+                            "provider": orchestrator.active_provider,
+                        })
                 except ValueError:
                     pass
                 continue
