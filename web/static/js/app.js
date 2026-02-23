@@ -26,6 +26,8 @@ const state = {
   currentAiText: "", // accumulated markdown text
   categories: [],
   activeCategory: "chat",
+  lastUserMsg: "",
+  userScrolledUp: false,
 };
 
 /* ── DOM refs ───────────────────────────────────────────── */
@@ -36,6 +38,8 @@ const el = {
   messages: $("messages"),
   messageInput: $("messageInput"),
   sendBtn: $("sendBtn"),
+  sendIcon: $("sendIcon"),
+  stopIcon: $("stopIcon"),
   attachBtn: $("attachBtn"),
   fileInput: $("fileInput"),
   attachStrip: $("attachmentStrip"),
@@ -142,6 +146,10 @@ function handleServerMessage(msg) {
       removeTypingIndicator();
       setStatus("Ready", "ready");
       el.sendBtn.disabled = false;
+      el.sendBtn.classList.remove("is-stop");
+      el.sendIcon.style.display = "";
+      el.stopIcon.style.display = "none";
+      el.sendBtn.title = "Send";
       // Count toward Ollama daily usage if Ollama is active
       incrementUsageIfOllama();
       // Refresh sessions list (title may have been auto-set)
@@ -162,6 +170,10 @@ function handleServerMessage(msg) {
       appendMessage(`❌ Error: ${msg.text}`, false);
       setStatus("Error", "error");
       el.sendBtn.disabled = false;
+      el.sendBtn.classList.remove("is-stop");
+      el.sendIcon.style.display = "";
+      el.stopIcon.style.display = "none";
+      el.sendBtn.title = "Send";
       break;
 
     case "model_set":
@@ -206,9 +218,16 @@ async function sendMessage() {
   appendTypingIndicator();
 
   // Update UI state
+  state.lastUserMsg = text;
   state.isStreaming = true;
-  el.sendBtn.disabled = true;
+  el.sendBtn.classList.add("is-stop");
+  el.sendIcon.style.display = "none";
+  el.stopIcon.style.display = "";
+  el.sendBtn.title = "Stop generating";
   setStatus("Thinking…", "working");
+  
+  // Force scroll to bottom on new message send
+  state.userScrolledUp = false;
   scrollToBottom();
 }
 
@@ -238,6 +257,40 @@ function appendMessage(text, isUser) {
     : marked.parse(text);
 
   body.appendChild(bubble);
+
+  // Add Copy & Regenerate Actions for AI
+  if (!isUser) {
+    const actions = document.createElement("div");
+    actions.className = "msg-actions";
+    
+    const copyBtn = document.createElement("button");
+    copyBtn.className = "action-btn";
+    copyBtn.innerHTML = `📋 Copy`;
+    copyBtn.title = "Copy Message";
+    copyBtn.onclick = () => {
+      // Get pure text without HTML tags for the raw markdown response
+      const rawText = msg.dataset.rawText || bubble.innerText;
+      copyToClipboard(rawText, copyBtn, "Copied");
+    };
+
+    const regenBtn = document.createElement("button");
+    regenBtn.className = "action-btn";
+    regenBtn.innerHTML = `↻ Regenerate`;
+    regenBtn.title = "Regenerate Response";
+    regenBtn.onclick = () => {
+      if (!state.lastUserMsg || state.isStreaming) return;
+      el.messageInput.value = state.lastUserMsg;
+      sendMessage();
+    };
+
+    actions.appendChild(copyBtn);
+    actions.appendChild(regenBtn);
+    body.appendChild(actions);
+    
+    // Store original text for copying later as it updates
+    msg.dataset.rawText = text;
+  }
+
   msg.appendChild(avatar);
   msg.appendChild(body);
   el.messages.appendChild(msg);
@@ -284,12 +337,52 @@ function removeTypingIndicator() {
 }
 
 function scrollToBottom() {
-  el.chatArea.scrollTop = el.chatArea.scrollHeight;
+  if (!state.userScrolledUp) {
+    el.chatArea.scrollTop = el.chatArea.scrollHeight;
+  }
 }
 
 function highlightCode(container) {
   container.querySelectorAll("pre code").forEach((block) => {
+    // If we haven't wrapped this code block yet, do it now
+    const pre = block.parentElement;
+    if (!pre.parentElement.classList.contains("code-block-wrapper")) {
+      const wrapper = document.createElement("div");
+      wrapper.className = "code-block-wrapper";
+      
+      const lang = (block.className.match(/language-(\w+)/) || [])[1] || "";
+      const header = document.createElement("div");
+      header.className = "code-header";
+      header.innerHTML = `
+        <span class="code-language">${lang}</span>
+        <button class="code-copy-btn">📋 Copy code</button>
+      `;
+      
+      pre.parentNode.insertBefore(wrapper, pre);
+      wrapper.appendChild(header);
+      wrapper.appendChild(pre);
+
+      const copyBtn = header.querySelector(".code-copy-btn");
+      copyBtn.addEventListener("click", () => {
+        copyToClipboard(block.textContent, copyBtn, "Copied!");
+      });
+    }
+
     hljs.highlightElement(block);
+  });
+  
+  // Also update dataset for parent bubble whenever we re-parse markdown
+  const bubble = container.querySelector(".msg-bubble");
+  if (bubble && container.dataset) {
+      container.dataset.rawText = state.currentAiText;
+  }
+}
+
+function copyToClipboard(text, btn, successText) {
+  navigator.clipboard.writeText(text).then(() => {
+    const original = btn.innerHTML;
+    btn.innerHTML = `✓ ${successText}`;
+    setTimeout(() => { btn.innerHTML = original; }, 2000);
   });
 }
 
@@ -637,8 +730,30 @@ function autoResizeInput() {
 /* ══════════════════════════════════════════════════════════
    Event listeners
 ══════════════════════════════════════════════════════════ */
-// Send
-el.sendBtn.addEventListener("click", sendMessage);
+// Smart auto-scroll checking
+el.chatArea.addEventListener("scroll", () => {
+  // If user scrolls up by more than 10px from the bottom, pause auto-scroll
+  const distanceToBottom = el.chatArea.scrollHeight - el.chatArea.scrollTop - el.chatArea.clientHeight;
+  state.userScrolledUp = distanceToBottom > 10;
+});
+
+// Send & Stop
+el.sendBtn.addEventListener("click", () => {
+  if (state.isStreaming) {
+    if (state.ws) {
+      state.ws.close(); // Triggers server disconnect to abort generation
+      state.isStreaming = false;
+      setStatus("Stopped", "ready");
+      el.sendBtn.disabled = false;
+      el.sendBtn.classList.remove("is-stop");
+      el.sendIcon.style.display = "";
+      el.stopIcon.style.display = "none";
+      el.sendBtn.title = "Send";
+    }
+  } else {
+    sendMessage();
+  }
+});
 el.messageInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();

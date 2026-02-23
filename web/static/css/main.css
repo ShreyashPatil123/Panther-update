@@ -609,6 +609,79 @@ body {
   color: var(--accent);
 }
 
+/* Message Actions (Copy, Regenerate) */
+.msg-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+.msg.ai:hover .msg-actions {
+  opacity: 1;
+}
+.action-btn {
+  background: transparent;
+  color: var(--text-muted);
+  border: none;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.action-btn:hover {
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+/* Code block headers */
+.code-block-wrapper {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin: 12px 0;
+  overflow: hidden;
+}
+/* Override the previous pre styles since it's now wrapped */
+.msg-bubble .code-block-wrapper pre {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}
+.code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.4);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.code-language {
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.code-copy-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: var(--transition);
+}
+.code-copy-btn:hover {
+  color: var(--text-primary);
+}
+
 /* Typing indicator */
 .typing-indicator {
   display: flex;
@@ -870,6 +943,17 @@ body {
 .send-btn:hover {
   background: #ff7d4a;
   box-shadow: 0 0 24px rgba(255, 107, 53, 0.6);
+  transform: scale(1.05);
+}
+.send-btn.is-stop {
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+.send-btn.is-stop:hover {
+  background: #ff4444;
+  color: white;
+  box-shadow: 0 0 16px rgba(255, 68, 68, 0.5);
   transform: scale(1.05);
 }
 .send-btn:disabled {
