@@ -157,26 +157,39 @@ async def ws_chat(websocket: WebSocket, session_id: str):
                 provider  = data.get("provider", "nvidia")
                 if model_id:
                     config = websocket.app.state.config
-                    config.default_model = model_id
                     if provider == "ollama":
+                        config.default_model = model_id
                         config.ollama_enabled = True
                         config.ollama_model   = model_id
                         api_key  = getattr(config, "ollama_api_key", None) or "ollama"
                         base_url = (config.ollama_base_url or "http://localhost:11434/v1").rstrip("/")
-                        orchestrator.set_api_key(api_key, base_url=base_url)
+                        orchestrator.set_api_key(api_key, base_url=base_url, provider="ollama")
                     elif provider == "gemini":
-                        config.ollama_enabled = False
                         google_key = getattr(config, "google_api_key", None) or ""
-                        if google_key:
-                            orchestrator.set_api_key(
-                                google_key,
-                                base_url="https://generativelanguage.googleapis.com/v1beta/openai",
-                            )
-                    else:
+                        if not google_key:
+                            await websocket.send_json({
+                                "type": "error",
+                                "text": "Google API key not configured. Add it in Settings first.",
+                            })
+                            continue
+                        config.default_model = model_id
                         config.ollama_enabled = False
-                        nvidia_key = config.nvidia_api_key or ""
-                        if nvidia_key and nvidia_key != "your_api_key_here":
-                            orchestrator.set_api_key(nvidia_key)
+                        orchestrator.set_api_key(
+                            google_key,
+                            base_url="https://generativelanguage.googleapis.com/v1beta/openai",
+                            provider="gemini",
+                        )
+                    else:  # nvidia
+                        nvidia_key = orchestrator._original_nvidia_key or config.nvidia_api_key or ""
+                        if not nvidia_key or nvidia_key == "your_api_key_here":
+                            await websocket.send_json({
+                                "type": "error",
+                                "text": "NVIDIA API key not configured. Add it in Settings first.",
+                            })
+                            continue
+                        config.default_model = model_id
+                        config.ollama_enabled = False
+                        orchestrator.set_api_key(nvidia_key, provider="nvidia")
                     logger.info(f"Model switched via WS: {model_id} ({provider})")
                     await websocket.send_json({"type": "model_set", "model": model_id, "provider": provider})
                 continue

@@ -129,6 +129,7 @@ class TaskPlanner:
         goal: str,
         nvidia_client: "NVIDIAClient",
         context: str = "",
+        model: str = "",
     ) -> AgentTask:
         """Break down a goal into executable steps using LLM.
 
@@ -166,7 +167,8 @@ Do not include any other text, just the numbered list."""
         plan_text = ""
         try:
             async for chunk in nvidia_client.chat_completion(
-                messages, stream=False, max_tokens=512, temperature=0.3
+                messages, model=model, stream=False, max_tokens=512,
+                temperature=0.3,
             ):
                 plan_text = chunk
         except Exception as e:

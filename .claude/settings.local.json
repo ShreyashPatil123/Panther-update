@@ -11,7 +11,8 @@
       "WebFetch(domain:googleapis.github.io)",
       "Bash(poetry add:*)",
       "Bash(poetry install:*)",
-      "Bash(poetry run pip:*)"
+      "Bash(poetry run pip:*)",
+      "Bash(curl:*)"
     ]
   }
 }

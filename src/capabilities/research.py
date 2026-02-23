@@ -56,6 +56,7 @@ class ResearchEngine:
         query: str,
         nvidia_client: Optional["NVIDIAClient"] = None,
         max_sources: int = 5,
+        model: str = "",
     ) -> ResearchResult:
         """Perform deep research on a topic.
 
@@ -84,7 +85,7 @@ class ResearchEngine:
         # Step 3: Synthesize with LLM if available
         if nvidia_client and sources:
             result.synthesized_answer = await self._synthesize_results(
-                sources, query, nvidia_client
+                sources, query, nvidia_client, model=model
             )
         else:
             # Fallback: concatenate snippets
@@ -258,6 +259,7 @@ class ResearchEngine:
         sources: List[ResearchSource],
         query: str,
         nvidia_client: "NVIDIAClient",
+        model: str = "",
     ) -> str:
         """Synthesize research results using LLM.
 
@@ -301,7 +303,7 @@ class ResearchEngine:
         response_chunks = []
         try:
             async for chunk in nvidia_client.chat_completion(
-                messages, stream=False, max_tokens=1024
+                messages, model=model, stream=False, max_tokens=1024
             ):
                 response_chunks.append(chunk)
         except Exception as e:

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PANTHER Compare</title>
+
+  <!-- Highlight.js -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+  <!-- Marked.js -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <!-- App styles -->
+  <link rel="stylesheet" href="/static/css/main.css" />
+  <link rel="stylesheet" href="/static/css/compare.css" />
+  <link rel="icon" href="/static/panther-logo.jpg" />
+</head>
+<body>
+
+  <!-- ── Navigation ─────────────────────────────────────────── -->
+  <nav class="compare-nav">
+    <a href="/" class="compare-back" title="Back to Chat">
+      <span class="compare-back-arrow">&#8592;</span>
+      <span>Chat</span>
+    </a>
+    <div class="compare-nav-center">
+      <img src="/static/panther-logo.jpg" alt="" class="compare-logo" />
+      <span class="compare-title">Compare</span>
+    </div>
+    <div class="compare-nav-right">
+      <button class="compare-add-btn" id="addSlotBtn" title="Add comparison column">+ Add</button>
+    </div>
+  </nav>
+
+  <!-- ── Prompt area ────────────────────────────────────────── -->
+  <div class="compare-prompt-area">
+    <textarea
+      id="comparePrompt"
+      class="compare-prompt-input"
+      placeholder="Enter your prompt here... (shared across all models)"
+      rows="3"
+    ></textarea>
+    <div class="compare-prompt-actions">
+      <button class="compare-run-btn" id="runAllBtn">
+        <span class="run-icon">&#9654;</span> Run All
+      </button>
+      <button class="compare-cancel-btn" id="cancelBtn" style="display:none;">
+        Cancel
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Compare grid ───────────────────────────────────────── -->
+  <div class="compare-grid" id="compareGrid">
+    <!-- Slots injected dynamically by compare.js -->
+  </div>
+
+  <!-- ── Status bar ─────────────────────────────────────────── -->
+  <div class="compare-status" id="compareStatus">Ready</div>
+
+  <script src="/static/js/compare.js"></script>
+</body>
+</html>

@@ -124,12 +124,22 @@
 
     // Tell backend + re-init HTTP client
     try {
-      await fetch('/api/model/select', {
+      const resp = await fetch('/api/model/select', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model_id: modelId, provider }),
       });
-    } catch { /* non-fatal */ }
+      const result = await resp.json();
+      if (!result.ok) {
+        // Revert optimistic UI and show error
+        currentModelId = '';
+        renderModels();
+        alert(result.error || 'Failed to switch model.');
+        return;
+      }
+    } catch (e) {
+      console.error('Model select failed:', e);
+    }
 
     // Also notify via WebSocket for immediate mid-session effect
     if (wsRef && wsRef.readyState === WebSocket.OPEN) {

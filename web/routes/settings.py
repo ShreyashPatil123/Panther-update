@@ -21,7 +21,7 @@ def _reinit_ollama_client(config, orchestrator):
     """Re-init the HTTP client for Ollama with current config (URL + optional bearer key)."""
     api_key = getattr(config, "ollama_api_key", None) or "ollama"  # 'ollama' = no-auth local
     base_url = (config.ollama_base_url or "http://localhost:11434/v1").rstrip("/")
-    orchestrator.set_api_key(api_key, base_url=base_url)
+    orchestrator.set_api_key(api_key, base_url=base_url, provider="ollama")
     config.default_model = config.ollama_model
     logger.info(f"Ollama client re-inited: {base_url} / key={'set' if api_key != 'ollama' else 'none'}")
 
@@ -126,9 +126,9 @@ async def update_settings(body: SettingsUpdate, request: Request):
                 _reinit_ollama_client(config, orchestrator)
             else:
                 # Switched FROM Ollama → back to NVIDIA
-                nvidia_key = config.nvidia_api_key
+                nvidia_key = orchestrator._original_nvidia_key or config.nvidia_api_key
                 if nvidia_key and nvidia_key != "your_api_key_here":
-                    orchestrator.set_api_key(nvidia_key)
+                    orchestrator.set_api_key(nvidia_key, provider="nvidia")
                     logger.info("Switched back to NVIDIA client")
 
         return JSONResponse({"ok": True})

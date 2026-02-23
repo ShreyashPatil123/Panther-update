@@ -29,6 +29,7 @@ class Settings(BaseSettings):
 
     # Google API Configuration (for Gemini Live voice)
     google_api_key: Optional[str] = Field(default=None, alias="GOOGLE_API_KEY")
+    gemini_model: Optional[str] = Field(default=None, alias="GEMINI_MODEL")
 
     # Application Settings
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
@@ -53,6 +54,7 @@ class Settings(BaseSettings):
     ollama_enabled: bool = Field(default=False, alias="OLLAMA_ENABLED")
     ollama_base_url: str = Field(default="http://localhost:11434/v1", alias="OLLAMA_BASE_URL")
     ollama_model: str = Field(default="llama3", alias="OLLAMA_MODEL")
+    ollama_api_key: Optional[str] = Field(default=None, alias="OLLAMA_API_KEY")
 
     # UI Settings
     window_width: int = 1400

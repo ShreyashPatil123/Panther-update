@@ -44,37 +44,68 @@ async def _fetch_nvidia_models(api_key: str, base_url: str) -> List[Dict[str, An
     return []
 
 
-async def _fetch_ollama_models(base_url: str) -> List[Dict[str, Any]]:
-    """Fetch models from local or remote Ollama server."""
-    # Ollama API endpoint is /api/tags (not /v1/models)
+async def _fetch_ollama_models(base_url: str, api_key: str = "") -> List[Dict[str, Any]]:
+    """Fetch models from local or remote Ollama server (including Ollama Cloud)."""
+    headers = {}
+    if api_key and api_key != "ollama":
+        headers["Authorization"] = f"Bearer {api_key}"
+
     ollama_root = base_url.rstrip("/").replace("/v1", "")
-    endpoints = [
-        f"{ollama_root}/api/tags",
-        "http://localhost:11434/api/tags",
-    ]
-    for endpoint in endpoints:
+    is_cloud = "ollama.com" in base_url
+
+    # Build list of (endpoint, parser) tuples to try
+    attempts: list[tuple[str, str]] = []
+
+    if is_cloud:
+        # Ollama Cloud uses OpenAI-compat /v1/models
+        attempts.append((f"{base_url.rstrip('/')}/models", "openai"))
+    else:
+        # Local Ollama uses /api/tags
+        attempts.append((f"{ollama_root}/api/tags", "ollama"))
+        attempts.append(("http://localhost:11434/api/tags", "ollama"))
+
+    for endpoint, fmt in attempts:
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.get(endpoint)
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(endpoint, headers=headers)
                 if resp.status_code == 200:
                     data = resp.json()
                     models = []
-                    for m in data.get("models", []):
-                        name = m.get("name", "")
-                        if not name:
-                            continue
-                        models.append({
-                            "id": name,
-                            "name": name,
-                            "provider": "ollama",
-                            "label": "Ollama",
-                            "color": "#a78bfa",
-                            "full_id": name,
-                            "size": m.get("size", 0),
-                        })
+                    if fmt == "openai":
+                        # OpenAI-compat format: {"data": [{"id": ...}, ...]}
+                        for m in data.get("data", []):
+                            mid = m.get("id", "")
+                            if not mid:
+                                continue
+                            models.append({
+                                "id": mid,
+                                "name": mid.split("/")[-1] if "/" in mid else mid,
+                                "provider": "ollama",
+                                "label": "Ollama Cloud" if is_cloud else "Ollama",
+                                "color": "#a78bfa",
+                                "full_id": mid,
+                            })
+                    else:
+                        # Native Ollama format: {"models": [{"name": ...}, ...]}
+                        for m in data.get("models", []):
+                            name = m.get("name", "")
+                            if not name:
+                                continue
+                            models.append({
+                                "id": name,
+                                "name": name,
+                                "provider": "ollama",
+                                "label": "Ollama",
+                                "color": "#a78bfa",
+                                "full_id": name,
+                                "size": m.get("size", 0),
+                            })
                     if models:
                         return models
-        except Exception:
+                else:
+                    logger.warning(f"Ollama {endpoint} returned {resp.status_code}")
+        except Exception as e:
+            logger.warning(f"Ollama fetch from {endpoint} failed: {e}")
             continue
     return []
 
@@ -164,6 +195,7 @@ async def list_all_models(request: Request):
     google_key = getattr(config, "google_api_key", None) or ""
     ollama_enabled = getattr(config, "ollama_enabled", False)
     ollama_base_url = getattr(config, "ollama_base_url", "http://localhost:11434/v1") or ""
+    ollama_api_key = getattr(config, "ollama_api_key", None) or ""
 
     # Fetch all providers concurrently
     tasks = []
@@ -173,8 +205,8 @@ async def list_all_models(request: Request):
     tasks.append(_fetch_nvidia_models(nvidia_key, "https://integrate.api.nvidia.com/v1"))
     labels.append("nvidia")
 
-    # Ollama — always try (even if not "enabled") so user can see what's local
-    tasks.append(_fetch_ollama_models(ollama_base_url))
+    # Ollama — always try (even if not "enabled") so user can see what's local/cloud
+    tasks.append(_fetch_ollama_models(ollama_base_url, ollama_api_key))
     labels.append("ollama")
 
     # Gemini
@@ -227,35 +259,42 @@ async def select_model(request: Request):
     config = request.app.state.config
     orchestrator = request.app.state.orchestrator
 
-    config.default_model = model_id
-
     if provider == "ollama":
+        config.default_model = model_id
         config.ollama_enabled = True
         config.ollama_model = model_id
         api_key = getattr(config, "ollama_api_key", None) or "ollama"
         base_url = (config.ollama_base_url or "http://localhost:11434/v1").rstrip("/")
-        orchestrator.set_api_key(api_key, base_url=base_url)
+        orchestrator.set_api_key(api_key, base_url=base_url, provider="ollama")
         logger.info(f"Model selected (Ollama): {model_id}")
 
     elif provider == "gemini":
-        # Gemini uses a separate client path — set flag on config
+        google_key = getattr(config, "google_api_key", None) or ""
+        if not google_key:
+            return JSONResponse(
+                {"ok": False, "error": "Google API key not configured. Add it in Settings first."},
+                status_code=400,
+            )
+        config.default_model = model_id
         config.ollama_enabled = False
         config.gemini_model = model_id
-        # For now route via NVIDIA client with google key as bearer
-        # (real Gemini integration would need genai SDK — placeholder)
-        google_key = getattr(config, "google_api_key", None) or ""
-        if google_key:
-            orchestrator.set_api_key(
-                google_key,
-                base_url="https://generativelanguage.googleapis.com/v1beta/openai",
-            )
+        orchestrator.set_api_key(
+            google_key,
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai",
+            provider="gemini",
+        )
         logger.info(f"Model selected (Gemini): {model_id}")
 
     else:  # nvidia / default
+        nvidia_key = orchestrator._original_nvidia_key or config.nvidia_api_key or ""
+        if not nvidia_key or nvidia_key == "your_api_key_here":
+            return JSONResponse(
+                {"ok": False, "error": "NVIDIA API key not configured. Add it in Settings first."},
+                status_code=400,
+            )
+        config.default_model = model_id
         config.ollama_enabled = False
-        nvidia_key = config.nvidia_api_key or ""
-        if nvidia_key and nvidia_key != "your_api_key_here":
-            orchestrator.set_api_key(nvidia_key)
+        orchestrator.set_api_key(nvidia_key, provider="nvidia")
         logger.info(f"Model selected (NVIDIA): {model_id}")
 
     return JSONResponse({"ok": True, "model": model_id, "provider": provider})

@@ -78,6 +78,8 @@ function connectWS() {
 
   state.ws.onopen = () => {
     setStatus('Connected', 'ready');
+    // Share WebSocket with the Models picker so model switching works mid-session
+    if (window.PantherModels) window.PantherModels.setWs(state.ws);
   };
 
   state.ws.onmessage = (e) => {
@@ -156,6 +158,14 @@ function handleServerMessage(msg) {
       appendMessage(`❌ Error: ${msg.text}`, false);
       setStatus('Error', 'error');
       el.sendBtn.disabled = false;
+      break;
+
+    case 'model_set':
+      // Model was switched via WS — notify the Models UI
+      window.dispatchEvent(new CustomEvent('panther:model_set', {
+        detail: { model: msg.model, provider: msg.provider },
+      }));
+      setStatus(`Model: ${(msg.model || '').split('/').pop()}`, 'ready');
       break;
   }
 }
@@ -395,7 +405,7 @@ async function loadCategories() {
     state.categories = data.categories || [];
     if (data.default_model) el.modelBadge.textContent = data.default_model.split('/').pop();
     renderCategoryPopup();
-  } catch (_) {}
+  } catch (_) { }
 }
 
 function renderCategoryPopup() {
@@ -429,7 +439,7 @@ function selectCategory(cat) {
    Persists to localStorage; auto-resets each day at midnight
 ══════════════════════════════════════════════════════════ */
 const USAGE_KEY = 'panther_ollama_usage';
-const DATE_KEY  = 'panther_ollama_date';
+const DATE_KEY = 'panther_ollama_date';
 const LIMIT_KEY = 'panther_ollama_limit';
 
 const usage = {
@@ -464,7 +474,7 @@ const usage = {
     if (!el.usageBarFill) return;
     const count = this.load();
     const limit = this.getLimit();
-    const pct   = Math.min((count / limit) * 100, 100);
+    const pct = Math.min((count / limit) * 100, 100);
 
     if (el.ollamaLimit && !el.ollamaLimit.value)
       el.ollamaLimit.value = limit;
@@ -523,7 +533,7 @@ async function openSettings() {
     el.nvdiaKey.placeholder = data.has_nvidia_key ? '(saved — enter to change)' : 'nvapi-…';
     el.googleKey.placeholder = data.has_google_key ? '(saved — enter to change)' : 'AIza…';
     el.ollamaApiKey.placeholder = data.has_ollama_key ? '(saved — enter to change)' : 'sk-… or leave blank for local';
-  } catch (_) {}
+  } catch (_) { }
   // Render usage tracker
   usage.render();
   el.settingsOverlay.style.display = 'flex';
@@ -544,9 +554,9 @@ async function saveSettings() {
     ollama_base_url: el.ollamaUrl.value.trim() || null,
     ollama_model: el.ollamaModel.value.trim() || null,
   };
-  if (el.nvdiaKey.value.trim())    body.nvidia_api_key  = el.nvdiaKey.value.trim();
-  if (el.googleKey.value.trim())   body.google_api_key  = el.googleKey.value.trim();
-  if (el.ollamaApiKey.value.trim()) body.ollama_api_key  = el.ollamaApiKey.value.trim();
+  if (el.nvdiaKey.value.trim()) body.nvidia_api_key = el.nvdiaKey.value.trim();
+  if (el.googleKey.value.trim()) body.google_api_key = el.googleKey.value.trim();
+  if (el.ollamaApiKey.value.trim()) body.ollama_api_key = el.ollamaApiKey.value.trim();
 
   try {
     const res = await fetch('/api/settings', {

@@ -66,6 +66,9 @@ class NVIDIAClient:
         Yields:
             Response chunks if streaming, else full response
         """
+        # Fall back to default model if caller passed empty/None
+        model = model or "meta/llama-3.1-8b-instruct"
+
         payload = {
             "model": model,
             "messages": messages,

@@ -49,6 +49,10 @@ class AgentOrchestrator:
         self.active_task_category: Optional[TaskCategory] = None
         self.task_system_prompt: Optional[str] = None
 
+        # Provider tracking — keep original keys safe across provider switches
+        self.active_provider: str = "nvidia"  # "nvidia" | "ollama" | "gemini"
+        self._original_nvidia_key: Optional[str] = config.nvidia_api_key
+
         logger.info("Agent Orchestrator initialized")
 
     async def initialize(self):
@@ -58,21 +62,23 @@ class AgentOrchestrator:
 
         # Initialize API client
         if self.config.ollama_enabled:
-            # Use Ollama local server
-            self.set_api_key("ollama", base_url=self.config.ollama_base_url)
+            # Use Ollama (local or cloud)
+            ollama_key = getattr(self.config, "ollama_api_key", None) or "ollama"
+            self.set_api_key(ollama_key, base_url=self.config.ollama_base_url, provider="ollama")
             self.config.default_model = self.config.ollama_model
             logger.info(f"Ollama mode: {self.config.ollama_base_url} / {self.config.ollama_model}")
         elif self.config.nvidia_api_key and self.config.nvidia_api_key != "your_api_key_here":
-            self.set_api_key(self.config.nvidia_api_key)
+            self.set_api_key(self.config.nvidia_api_key, provider="nvidia")
 
         logger.info("Agent orchestrator initialized successfully")
 
-    def set_api_key(self, api_key: str, base_url: str = None):
+    def set_api_key(self, api_key: str, base_url: str = None, provider: str = "nvidia"):
         """Set API key and initialize/reinitialize client.
 
         Args:
             api_key: API key (use 'ollama' for local Ollama).
-            base_url: Optional base URL override (e.g. for Ollama).
+            base_url: Optional base URL override (e.g. for Ollama/Gemini).
+            provider: Provider name ('nvidia', 'ollama', 'gemini').
         """
         # Close existing client if present
         if self.nvidia_client is not None:
@@ -81,13 +87,19 @@ class AgentOrchestrator:
             except Exception:
                 pass
 
-        self.config.nvidia_api_key = api_key
+        self.active_provider = provider
+
+        # Only overwrite config.nvidia_api_key if it's actually NVIDIA
+        if provider == "nvidia":
+            self.config.nvidia_api_key = api_key
+            self._original_nvidia_key = api_key
+
         url = base_url or self.config.nvidia_base_url
         self.nvidia_client = NVIDIAClient(
             api_key=api_key,
             base_url=url,
         )
-        logger.info(f"API client initialized with base URL: {url}")
+        logger.info(f"API client initialized: provider={provider}, base_url={url}")
 
     def set_task_category(self, category: Optional[TaskCategory]):
         """Switch to a task-specific model and system prompt.
@@ -223,6 +235,12 @@ class AgentOrchestrator:
                     f"Model IDs use the format 'provider/model-name' "
                     f"(e.g. 'moonshotai/kimi-k2-thinking')."
                 )
+            elif "429" in error_msg or "quota" in error_msg.lower():
+                yield (
+                    f"⚠️ Rate limit or quota exceeded for model '{self.config.default_model}'. "
+                    f"Your free tier may have reached its limit. "
+                    f"Please try a different model or check your billing plan."
+                )
             elif "401" in error_msg:
                 yield "Invalid API key. Please update your key in Settings."
             else:
@@ -284,10 +302,11 @@ class AgentOrchestrator:
                 "text": message,
             })
 
-            # Select model
-            if needs_vision:
+            # Select model — use NVIDIA vision model only when on NVIDIA;
+            # Gemini and Ollama vision-capable models handle images natively.
+            if needs_vision and self.active_provider == "nvidia":
                 model = DEFAULT_VISION_MODEL
-                logger.info(f"Auto-switching to vision model: {model}")
+                logger.info(f"Auto-switching to NVIDIA vision model: {model}")
             else:
                 model = self.config.default_model
 
@@ -403,7 +422,10 @@ class AgentOrchestrator:
                 },
             ]
 
-            model = DEFAULT_VISION_MODEL
+            if self.active_provider == "nvidia":
+                model = DEFAULT_VISION_MODEL
+            else:
+                model = self.config.default_model
             logger.info(f"Processing screen context with vision model: {model}")
 
             system_prompt = self.task_system_prompt or (
@@ -498,9 +520,10 @@ class AgentOrchestrator:
 
         try:
             full_response = ""
+            ocr_model = DEFAULT_VISION_MODEL if self.active_provider == "nvidia" else self.config.default_model
             async for chunk in self.nvidia_client.chat_completion(
                 messages,
-                model=DEFAULT_VISION_MODEL,
+                model=ocr_model,
                 max_tokens=2048,
                 stream=False,
             ):
@@ -702,7 +725,8 @@ Guidelines:
         plan_json = ""
         try:
             async for chunk in self.nvidia_client.chat_completion(
-                plan_messages, stream=False, max_tokens=256, temperature=0.1
+                plan_messages, model=self.config.default_model,
+                stream=False, max_tokens=256, temperature=0.1,
             ):
                 plan_json = chunk
         except Exception as e:
@@ -818,7 +842,8 @@ Guidelines:
                 },
             ]
             async for chunk in self.nvidia_client.chat_completion(
-                analysis_messages, max_tokens=512
+                analysis_messages, model=self.config.default_model,
+                max_tokens=512,
             ):
                 yield chunk
 
@@ -849,7 +874,8 @@ Guidelines:
         plan_json = ""
         try:
             async for chunk in self.nvidia_client.chat_completion(
-                plan_messages, stream=False, max_tokens=256, temperature=0.1
+                plan_messages, model=self.config.default_model,
+                stream=False, max_tokens=256, temperature=0.1,
             ):
                 plan_json = chunk
         except Exception as e:
@@ -915,7 +941,8 @@ Guidelines:
             ]
             full_response = ""
             async for chunk in self.nvidia_client.chat_completion(
-                summary_messages, max_tokens=1024
+                summary_messages, model=self.config.default_model,
+                max_tokens=1024,
             ):
                 full_response += chunk
                 yield chunk
@@ -940,6 +967,7 @@ Guidelines:
                 message,
                 nvidia_client=self.nvidia_client,
                 max_sources=5,
+                model=self.config.default_model,
             )
 
             yield f"\n✅ Found **{len(result.sources)}** sources\n\n"
