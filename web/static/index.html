@@ -23,6 +23,7 @@
     />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <link rel="stylesheet" href="/static/css/main.css" />
+    <link rel="stylesheet" href="/static/css/panther-live.css" />
   </head>
   <body>
     <!-- ═══════════════════════════════════════════
@@ -32,7 +33,11 @@
       <!-- Brand -->
       <div class="sidebar-brand">
         <div class="brand-icon">
-          <img src="/static/panther-logo.jpg" alt="PANTHER" class="brand-logo-img" />
+          <img
+            src="/static/Panther.png"
+            alt="PANTHER"
+            class="brand-logo-img"
+          />
         </div>
         <span class="brand-name">PANTHER</span>
       </div>
@@ -98,12 +103,21 @@
           <span>Models</span>
         </button>
         <!-- Compare button -->
-        <a href="/compare" class="compare-nav-btn" id="compareBtn" title="Compare models side by side">
+        <a
+          href="/compare"
+          class="compare-nav-btn"
+          id="compareBtn"
+          title="Compare models side by side"
+        >
           Compare
         </a>
-        <!-- Gemini Live rainbow button -->
-        <button class="rainbow-btn" id="geminiLiveBtn" title="Launch Gemini Live voice session">
-          <span class="rainbow-btn-content">❖ Gemini Live</span>
+        <!-- Panther Live rainbow button -->
+        <button
+          class="rainbow-btn"
+          id="geminiLiveBtn"
+          title="Launch Panther Live voice session"
+        >
+          <span class="rainbow-btn-content">❖ Panther Live</span>
         </button>
       </div>
 
@@ -115,8 +129,26 @@
           <button class="model-picker-close" id="modelPickerClose">×</button>
         </div>
         <div class="model-search-wrap">
-          <svg class="model-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input class="model-search" id="modelSearch" type="text" placeholder="Search models…" autocomplete="off" />
+          <svg
+            class="model-search-icon"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            class="model-search"
+            id="modelSearch"
+            type="text"
+            placeholder="Search models…"
+            autocomplete="off"
+          />
         </div>
         <div class="model-provider-tabs" id="modelProviderTabs">
           <button class="mprov-tab active" data-prov="all">All</button>
@@ -133,27 +165,102 @@
       <section class="hero" id="hero">
         <div class="hero-inner">
           <div class="hero-logo">
-            <img src="/static/panther-logo.jpg" alt="PANTHER" class="hero-logo-img" />
+            <img
+            src="/static/Panther.png"
+            alt="PANTHER"
+            class="hero-logo-img"
+            />
           </div>
           <h1 class="hero-title">PANTHER</h1>
           <p class="hero-subtitle">
             Powered by NVIDIA NIM · Built for intelligence
           </p>
           <div class="hero-chips">
-            <button class="chip" data-prompt="Explain quantum computing in simple terms">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            <button
+              class="chip"
+              data-prompt="Explain quantum computing in simple terms"
+            >
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="12" cy="12" r="5" />
+                <line x1="12" y1="1" x2="12" y2="3" />
+                <line x1="12" y1="21" x2="12" y2="23" />
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                <line x1="1" y1="12" x2="3" y2="12" />
+                <line x1="21" y1="12" x2="23" y2="12" />
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+              </svg>
               Explain a concept
             </button>
-            <button class="chip" data-prompt="Write a Python script that scrapes news headlines">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            <button
+              class="chip"
+              data-prompt="Write a Python script that scrapes news headlines"
+            >
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="16 18 22 12 16 6" />
+                <polyline points="8 6 2 12 8 18" />
+              </svg>
               Write code
             </button>
-            <button class="chip" data-prompt="Analyze the latest AI trends and give me a summary">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <button
+              class="chip"
+              data-prompt="Analyze the latest AI trends and give me a summary"
+            >
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
               Research a topic
             </button>
-            <button class="chip" data-prompt="Help me plan a structured week of deep work">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M5 6h14a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg>
+            <button
+              class="chip"
+              data-prompt="Help me plan a structured week of deep work"
+            >
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="9" y="2" width="6" height="4" rx="1" />
+                <path
+                  d="M5 6h14a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"
+                />
+                <line x1="9" y1="12" x2="15" y2="12" />
+                <line x1="9" y1="16" x2="13" y2="16" />
+              </svg>
               Plan something
             </button>
           </div>
@@ -314,7 +421,9 @@
             <div class="form-group">
               <label class="form-label" for="ollamaApiKey">
                 API Key
-                <span class="form-label-hint">(for cloud Ollama / OpenRouter / LM Studio cloud)</span>
+                <span class="form-label-hint"
+                  >(for cloud Ollama / OpenRouter / LM Studio cloud)</span
+                >
               </label>
               <input
                 type="password"
@@ -329,10 +438,18 @@
             <div class="usage-section" id="ollamaUsageSection">
               <div class="usage-header">
                 <span class="usage-title">📊 Daily Usage Tracker</span>
-                <button class="usage-reset-btn" id="resetUsageBtn" title="Reset today's count">Reset</button>
+                <button
+                  class="usage-reset-btn"
+                  id="resetUsageBtn"
+                  title="Reset today's count"
+                >
+                  Reset
+                </button>
               </div>
               <div class="form-group">
-                <label class="form-label" for="ollamaLimit">Daily Request Limit</label>
+                <label class="form-label" for="ollamaLimit"
+                  >Daily Request Limit</label
+                >
                 <input
                   type="number"
                   class="form-input"
@@ -348,7 +465,11 @@
                 </div>
                 <div class="usage-stats" id="usageStats">— requests today</div>
               </div>
-              <div class="usage-warning" id="usageWarning" style="display:none;"></div>
+              <div
+                class="usage-warning"
+                id="usageWarning"
+                style="display: none"
+              ></div>
             </div>
           </div>
         </div>
@@ -361,9 +482,49 @@
       </div>
     </div>
 
+    <!-- ═══════════════════════════════════════════
+       PANTHER LIVE VOICE ASSISTANT OVERLAY (hidden)
+    ══════════════════════════════════════════════ -->
+    <div class="va-overlay" id="vaOverlay" role="dialog" aria-modal="true" aria-label="Voice Assistant" style="display:none;">
+      <div class="va-backdrop" id="vaBackdrop"></div>
+      <div class="va-panel">
+        <button class="va-close-btn" id="vaCloseBtn" aria-label="Close voice assistant" title="Close (Esc)">✕</button>
+        <div class="va-agent-badge" id="vaAgentBadge">
+          <span class="va-agent-dot"></span>
+          <span id="vaAgentName">🧠 General Assistant</span>
+        </div>
+        <div class="va-particle-canvas" id="vaParticleCanvas" aria-hidden="true"></div>
+        <div class="va-status-text" id="vaStatusText">Click the mic to start</div>
+        <div class="va-transcript" id="vaTranscript">
+          <span class="va-label">You:</span>
+          <span id="vaTranscriptText"></span>
+        </div>
+        <div class="va-response" id="vaResponse">
+          <span class="va-label">PANTHER:</span>
+          <span id="vaResponseText"></span>
+        </div>
+        <div class="va-timeout-warning" id="vaTimeoutWarning">
+          ⏱️ Still there?
+          <button id="vaStayActiveBtn">Stay Active</button>
+        </div>
+        <button class="va-mic-btn" id="vaMicBtn" aria-label="Turn microphone on" title="Click to speak (Ctrl+Space)">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28" id="vaMicIcon">
+            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.49 6-3.31 6-6.72h-1.7z"/>
+          </svg>
+          <span class="va-mic-label" id="vaMicLabel">Tap to Speak</span>
+        </button>
+        <div class="va-hints">
+          <kbd>Ctrl</kbd>+<kbd>Space</kbd> toggle mic &middot; <kbd>Esc</kbd> close
+        </div>
+      </div>
+    </div>
+    <div class="va-error" id="vaError"></div>
+
     <!-- Shader background (must load before app.js so canvas is inserted first) -->
     <script src="/static/js/shader.js?v=4"></script>
     <script src="/static/js/models.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="/static/js/panther-live.js?v=6"></script>
     <script src="/static/js/app.js"></script>
   </body>
 </html>

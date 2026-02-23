@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PANTHER Live — Voice Assistant</title>
+  <meta name="description" content="PANTHER AI Voice Assistant powered by Gemini Live" />
+  <link rel="stylesheet" href="/static/css/panther-live.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div class="va-overlay" role="dialog" aria-modal="true" aria-label="Voice Assistant">
+    <!-- Backdrop -->
+    <div class="va-backdrop" id="vaBackdrop"></div>
+
+    <!-- Main panel -->
+    <div class="va-panel">
+      <!-- Close -->
+      <button class="va-close-btn" id="vaCloseBtn" aria-label="Close voice assistant" title="Close (Esc)">✕</button>
+
+      <!-- Agent label -->
+      <div class="va-agent-badge" id="vaAgentBadge">
+        <span class="va-agent-dot"></span>
+        <span id="vaAgentName">🧠 General Assistant</span>
+      </div>
+
+      <!-- Three.js Particle Bubble -->
+      <div class="va-particle-canvas" id="vaParticleCanvas" aria-hidden="true"></div>
+
+      <!-- Status text -->
+      <div class="va-status-text" id="vaStatusText">Click the mic to start</div>
+
+      <!-- Transcript -->
+      <div class="va-transcript" id="vaTranscript">
+        <span class="va-label">You:</span>
+        <span id="vaTranscriptText"></span>
+      </div>
+
+      <!-- Response -->
+      <div class="va-response" id="vaResponse">
+        <span class="va-label">PANTHER:</span>
+        <span id="vaResponseText"></span>
+      </div>
+
+      <!-- Timeout warning -->
+      <div class="va-timeout-warning" id="vaTimeoutWarning">
+        ⏱️ Still there?
+        <button id="vaStayActiveBtn">Stay Active</button>
+      </div>
+
+      <!-- Mic button -->
+      <button class="va-mic-btn" id="vaMicBtn" aria-label="Turn microphone on" title="Click to speak (Ctrl+Space)">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28" id="vaMicIcon">
+          <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.49 6-3.31 6-6.72h-1.7z"/>
+        </svg>
+        <span class="va-mic-label" id="vaMicLabel">Tap to Speak</span>
+      </button>
+
+      <!-- Hints -->
+      <div class="va-hints">
+        <kbd>Ctrl</kbd>+<kbd>Space</kbd> toggle mic &nbsp;·&nbsp; <kbd>Esc</kbd> close
+      </div>
+    </div>
+  </div>
+
+  <!-- Error toast -->
+  <div class="va-error" id="vaError"></div>
+
+  <!-- Three.js from CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- Main logic -->
+  <script src="/static/js/panther-live.js"></script>
+</body>
+</html>

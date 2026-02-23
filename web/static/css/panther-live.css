@@ -1,0 +1,287 @@
+/* ═══════════════════════════════════════════════════════════
+   PANTHER Live — Voice Assistant Overlay Styles
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Reset & Base ─────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: #0a0500;
+  color: #fff;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ── Overlay ──────────────────────────────────────────────── */
+.va-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: va-fade-in 0.3s ease;
+}
+
+@keyframes va-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.va-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 5, 0, 0.85);
+  backdrop-filter: blur(12px) saturate(0.8);
+}
+
+/* ── Panel ─────────────────────────────────────────────────── */
+.va-panel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  padding: 48px 40px;
+  width: min(560px, 90vw);
+  animation: va-slide-up 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes va-slide-up {
+  from { transform: translateY(40px) scale(0.95); opacity: 0; }
+  to   { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+/* ── Close Button ──────────────────────────────────────────── */
+.va-close-btn {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  background: rgba(255, 154, 60, 0.12);
+  border: 1px solid rgba(255, 154, 60, 0.3);
+  color: rgba(255, 200, 140, 0.9);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.va-close-btn:hover {
+  background: rgba(255, 100, 50, 0.3);
+  color: #fff;
+  transform: scale(1.1);
+}
+
+/* ── Agent Badge ───────────────────────────────────────────── */
+.va-agent-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 154, 60, 0.1);
+  border: 1px solid rgba(255, 154, 60, 0.25);
+  color: rgba(255, 190, 120, 0.9);
+  border-radius: 20px;
+  padding: 4px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.va-agent-badge.visible { opacity: 1; }
+
+.va-agent-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #FF9A3C;
+  animation: va-pulse 1.5s ease-in-out infinite;
+}
+
+/* ── Particle Canvas ───────────────────────────────────────── */
+.va-particle-canvas {
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  overflow: hidden;
+  filter: drop-shadow(0 0 40px rgba(255, 154, 60, 0.4));
+  transition: filter 0.5s ease;
+}
+
+/* ── Status Text ───────────────────────────────────────────── */
+.va-status-text {
+  color: rgba(255, 200, 160, 0.8);
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+  min-height: 22px;
+  text-align: center;
+}
+
+/* ── Transcript & Response ─────────────────────────────────── */
+.va-transcript,
+.va-response {
+  max-width: 460px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.6;
+  border-radius: 12px;
+  padding: 10px 16px;
+  animation: va-fade-in 0.3s ease;
+  display: none;
+}
+.va-transcript.visible,
+.va-response.visible { display: block; }
+
+.va-transcript {
+  color: rgba(255, 220, 180, 0.7);
+  background: rgba(255, 154, 60, 0.06);
+  border: 1px solid rgba(255, 154, 60, 0.1);
+}
+.va-response {
+  color: rgba(255, 240, 220, 0.9);
+  background: rgba(255, 154, 60, 0.1);
+  border: 1px solid rgba(255, 154, 60, 0.2);
+}
+.va-label {
+  font-weight: 600;
+  color: rgba(255, 154, 60, 0.9);
+  margin-right: 6px;
+}
+
+/* ── Timeout Warning ───────────────────────────────────────── */
+.va-timeout-warning {
+  background: rgba(255, 120, 30, 0.15);
+  border: 1px solid rgba(255, 120, 30, 0.4);
+  border-radius: 10px;
+  padding: 10px 18px;
+  color: rgba(255, 200, 140, 0.9);
+  font-size: 13px;
+  display: none;
+  align-items: center;
+  gap: 12px;
+  animation: va-pulse-border 1s ease infinite;
+}
+.va-timeout-warning.visible { display: flex; }
+
+.va-timeout-warning button {
+  background: rgba(255, 154, 60, 0.3);
+  border: 1px solid rgba(255, 154, 60, 0.5);
+  color: #fff;
+  border-radius: 6px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.2s;
+}
+.va-timeout-warning button:hover {
+  background: rgba(255, 154, 60, 0.5);
+}
+
+/* ── Mic Button ────────────────────────────────────────────── */
+.va-mic-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 154, 60, 0.4);
+  background: rgba(255, 154, 60, 0.08);
+  color: rgba(255, 190, 120, 0.9);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: relative;
+}
+.va-mic-btn svg { flex-shrink: 0; }
+
+.va-mic-label {
+  position: absolute;
+  bottom: -26px;
+  font-size: 11px;
+  white-space: nowrap;
+  color: rgba(255, 190, 120, 0.6);
+  letter-spacing: 0.3px;
+}
+
+.va-mic-btn.on {
+  background: rgba(255, 120, 40, 0.2);
+  border-color: rgba(255, 120, 40, 0.7);
+  color: #fff;
+  box-shadow: 0 0 0 0 rgba(255, 120, 40, 0.5);
+}
+.va-mic-btn.pulse {
+  animation: va-mic-ripple 1.4s ease infinite;
+}
+.va-mic-btn:hover:not(:disabled) {
+  transform: scale(1.08);
+  background: rgba(255, 120, 40, 0.25);
+  border-color: rgba(255, 120, 40, 0.8);
+}
+.va-mic-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+/* ── Hints ─────────────────────────────────────────────────── */
+.va-hints {
+  color: rgba(255, 180, 100, 0.3);
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  margin-top: 8px;
+}
+kbd {
+  display: inline-block;
+  background: rgba(255, 154, 60, 0.1);
+  border: 1px solid rgba(255, 154, 60, 0.2);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: monospace;
+  font-size: 10px;
+}
+
+/* ── Animations ────────────────────────────────────────────── */
+@keyframes va-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.8); }
+}
+@keyframes va-mic-ripple {
+  0%   { box-shadow: 0 0 0 0 rgba(255, 120, 40, 0.5); }
+  70%  { box-shadow: 0 0 0 18px rgba(255, 120, 40, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 120, 40, 0); }
+}
+@keyframes va-pulse-border {
+  0%, 100% { border-color: rgba(255, 120, 30, 0.4); }
+  50%       { border-color: rgba(255, 120, 30, 0.8); }
+}
+
+/* ── Error Toast ───────────────────────────────────────────── */
+.va-error {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(200, 50, 30, 0.9);
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  z-index: 10000;
+  display: none;
+  animation: va-fade-in 0.3s ease;
+}
+.va-error.visible { display: block; }
+
+/* ── Responsive ────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .va-panel { padding: 32px 20px; gap: 18px; }
+  .va-particle-canvas { width: 220px; height: 220px; }
+  .va-mic-btn { width: 76px; height: 76px; }
+}

@@ -12,6 +12,7 @@ from web.routes.chat import router as chat_router
 from web.routes.settings import router as settings_router
 from web.routes.models import router as models_router
 from web.routes.compare import router as compare_router
+from web.routes.panther_live import router as panther_live_router
 
 
 def create_app(config, orchestrator) -> FastAPI:
@@ -41,6 +42,7 @@ def create_app(config, orchestrator) -> FastAPI:
     app.include_router(settings_router)
     app.include_router(models_router)
     app.include_router(compare_router)
+    app.include_router(panther_live_router)
 
     # Static files (CSS, JS, assets)
     static_dir = Path(__file__).parent / "static"
