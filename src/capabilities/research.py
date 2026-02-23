@@ -247,8 +247,8 @@ class ResearchEngine:
             # Clean whitespace
             text = re.sub(r"\s+", " ", text).strip()
 
-            # Return first 2000 chars of useful content
-            return text[:2000]
+            # Return first 10000 chars of useful content (needs to bypass nav menus)
+            return text[:10000]
 
         except Exception as e:
             logger.debug(f"Failed to fetch {source.url}: {e}")
@@ -276,7 +276,7 @@ class ResearchEngine:
         for i, src in enumerate(sources, 1):
             content = src.content or src.snippet
             context_parts.append(
-                f"Source {i}: {src.title}\nURL: {src.url}\nContent: {content[:500]}"
+                f"Source {i}: {src.title}\nURL: {src.url}\nContent: {content[:10000]}"
             )
 
         context = "\n\n".join(context_parts)

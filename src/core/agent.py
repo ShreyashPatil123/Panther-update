@@ -2,11 +2,13 @@
 import asyncio
 import json
 import re
+from datetime import datetime
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from loguru import logger
 
 from src.api.nvidia_client import NVIDIAClient
+from src.capabilities.finance import FinanceEngine
 from src.capabilities.files import FileAction, PermissionType
 from src.config import Settings
 from src.core.file_processor import (
@@ -229,6 +231,9 @@ class AgentOrchestrator:
                     yield chunk
             elif intent == "browser_task":
                 async for chunk in self._handle_browser_task(message, messages):
+                    yield chunk
+            elif intent == "finance":
+                async for chunk in self._handle_finance(message, messages):
                     yield chunk
             elif intent == "research":
                 async for chunk in self._handle_research(message, messages):
@@ -576,49 +581,142 @@ class AgentOrchestrator:
         ]
 
     async def _classify_intent(self, message: str) -> str:
-        """Classify user intent.
+        """Classify user intent using keyword fast-path + LLM fallback.
+
+        Two-tier approach:
+          1. Keywords catch obvious file/browser operations instantly.
+          2. For everything else, the LLM decides if the query needs
+             live internet data (research) or can be answered from
+             training knowledge (chat).
 
         Args:
             message: User message
 
         Returns:
-            Intent string: 'file_operation' | 'browser_task' | 'research' | 'chat'
+            Intent string: 'file_operation' | 'browser_task' | 'finance' | 'research' | 'chat'
         """
         message_lower = message.lower()
 
-        # File operation indicators
+        # ── Tier 1: keyword fast-path for unambiguous intents ─────────────
         file_keywords = [
             "open file", "read file", "write file", "save file", "delete file",
             "create file", "edit file", "list files", "list folder", "show files",
             "directory", "folder contents", "file system", "read the file",
             "open the file", "show me the file", "what's in", "contents of",
         ]
-
-        # Browser task indicators
         browser_keywords = [
             "browse", "open browser", "navigate to", "go to website", "go to http",
             "search the web", "search online", "look up online", "open a tab",
             "visit the site", "click on", "take a screenshot", "web search",
             "search google", "search bing",
         ]
-
-        # Research indicators
-        research_keywords = [
-            "research", "investigate", "find information about", "look up",
-            "search for information", "analyze", "deep dive", "comprehensive overview",
-            "what is", "explain to me", "tell me about", "find out about",
-            "gather information",
+        finance_keywords = [
+            "stock price", "share price", "stock market", "market price",
+            "gold price", "gold rate", "silver price", "silver rate",
+            "bitcoin price", "btc price", "crypto price", "ethereum price",
+            "forex rate", "exchange rate", "dollar rate", "usd inr",
+            "nifty", "sensex", "dow jones", "nasdaq", "s&p 500",
+            "crude oil price", "oil price", "commodity price",
+            "24 karat", "22 karat", "24k gold", "22k gold",
         ]
 
-        # Check for explicit patterns first
         if any(kw in message_lower for kw in file_keywords):
             return "file_operation"
         if any(kw in message_lower for kw in browser_keywords):
             return "browser_task"
+        if any(kw in message_lower for kw in finance_keywords):
+            return "finance"
+
+        # ── Tier 2: LLM-powered classification ────────────────────────────
+        # The LLM is far better at recognizing when a question needs live
+        # internet data (prices, weather, news, scores, current events)
+        # vs. a simple conversational reply.
+        try:
+            return await self._llm_classify_intent(message)
+        except Exception as e:
+            logger.warning(f"LLM intent classification failed, using keyword fallback: {e}")
+
+        # ── Tier 3: keyword fallback for research (if LLM fails) ──────────
+        research_keywords = [
+            "research", "investigate", "find information about", "look up",
+            "search for information", "deep dive", "comprehensive overview",
+            "find out about", "gather information",
+        ]
         if any(kw in message_lower for kw in research_keywords):
             return "research"
 
         return "chat"
+
+    async def _llm_classify_intent(self, message: str) -> str:
+        """Use the LLM to classify whether a query needs live internet data.
+
+        Args:
+            message: User message
+
+        Returns:
+            'finance', 'research', or 'chat'
+        """
+        now = datetime.now().strftime("%B %d, %Y %I:%M %p")
+
+        classification_prompt = [
+            {
+                "role": "system",
+                "content": (
+                    f"You are an intent classifier. The current date and time is: {now}.\n\n"
+                    "Your ONLY job is to decide the correct intent for the user's message.\n\n"
+                    "Return EXACTLY one word — 'finance', 'research', or 'chat'.\n\n"
+                    "Return 'finance' if the query asks about ANY of these:\n"
+                    "- Stock prices (Apple, Tesla, Reliance, any company)\n"
+                    "- Cryptocurrency prices (Bitcoin, Ethereum, Solana, any coin)\n"
+                    "- Gold, silver, platinum, or commodity prices\n"
+                    "- Forex rates (USD/INR, EUR/USD, dollar rate)\n"
+                    "- Stock market indices (Nifty, Sensex, Dow Jones, NASDAQ, S&P)\n"
+                    "- Crude oil, natural gas prices\n"
+                    "- Any query about market data, share price, stock quote\n\n"
+                    "Return 'research' if the query asks about ANY of these:\n"
+                    "- Current weather or forecasts\n"
+                    "- Recent or breaking news\n"
+                    "- Sports scores or live results\n"
+                    "- Current events, elections, politics\n"
+                    "- Product availability, reviews, or comparisons\n"
+                    "- Any factual question where the answer changes over time\n"
+                    "- Any question containing words like 'today', 'now', 'current', "
+                    "'latest', 'recent', 'this week', 'this month', 'live'\n\n"
+                    "Return 'chat' if the query is:\n"
+                    "- A greeting or casual conversation\n"
+                    "- A coding or technical question\n"
+                    "- A creative writing request\n"
+                    "- A math or logic problem\n"
+                    "- A question about timeless general knowledge\n"
+                    "- An opinion or advice request\n\n"
+                    "Respond with ONLY the single word 'finance', 'research', or 'chat'. Nothing else."
+                ),
+            },
+            {
+                "role": "user",
+                "content": message,
+            },
+        ]
+
+        result = ""
+        async for chunk in self.nvidia_client.chat_completion(
+            classification_prompt,
+            model=self.config.default_model,
+            stream=False,
+            max_tokens=8,
+            temperature=0.0,
+        ):
+            result += chunk
+
+        intent = result.strip().lower().rstrip(".")
+        if intent in ("finance", "research", "chat"):
+            logger.info(f"LLM classified intent as '{intent}' for: {message[:60]}")
+            return intent
+
+        # If LLM returns something unexpected, default to research for safety
+        # (better to search and find real data than hallucinate)
+        logger.warning(f"LLM returned unexpected intent '{result}', defaulting to 'research'")
+        return "research"
 
     def _build_messages(
         self,
@@ -636,7 +734,10 @@ class AgentOrchestrator:
         Returns:
             List of messages for LLM
         """
-        system_prompt = """You are an intelligent AI assistant powered by NVIDIA NIM.
+        now = datetime.now().strftime("%B %d, %Y %I:%M %p")
+        system_prompt = f"""You are an intelligent AI assistant powered by NVIDIA NIM.
+The current date and time is: {now}.
+
 You have the following capabilities:
 - Access to files and folders (with permission)
 - Browser automation for web tasks
@@ -1012,6 +1113,47 @@ Guidelines:
             logger.error(f"Research error: {e}")
             yield f"❌ Research failed: {e}\n\nLet me answer from my knowledge instead:\n\n"
             async for chunk in self._handle_chat(messages):
+                yield chunk
+
+    async def _handle_finance(
+        self,
+        message: str,
+        messages: List[Dict[str, str]],
+    ) -> AsyncIterator[str]:
+        """Handle financial market data queries via Twelve Data API."""
+        yield f"📈 Fetching live market data...\n\n"
+
+        try:
+            engine = FinanceEngine()
+            quote, text = await engine.get_quote(
+                message,
+                nvidia_client=self.nvidia_client,
+                model=self.config.default_model,
+            )
+            await engine.close()
+
+            if quote:
+                yield text
+            else:
+                # text contains the error message
+                yield text
+                yield "\n\nLet me try a general web search instead...\n\n"
+                async for chunk in self._handle_research(message, messages):
+                    yield chunk
+                return
+
+            # Store in memory
+            await self.memory.add_message(
+                "assistant",
+                text,
+                session_id=self.current_session_id,
+            )
+
+        except Exception as e:
+            logger.error(f"Finance query error: {e}")
+            yield f"❌ Market data fetch failed: {e}\n\n"
+            yield "Falling back to web search...\n\n"
+            async for chunk in self._handle_research(message, messages):
                 yield chunk
 
     # ─────────────────────────────────────────────────────────────────────────

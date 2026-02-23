@@ -1,0 +1,29 @@
+QUERY: Gold prices today in India
+
+event: session
+data: {"session_id": "a7bbe10d-6c7e-4587-8d65-126bd1d90a64"}
+
+event: progress
+data: {"step": "routing", "message": "Understanding your request..."}
+
+event: progress
+data: {"step": "resolve", "message": "\ud83d\udcc8 Identifying ticker symbol..."}
+
+event: progress
+data: {"step": "fetch", "message": "\ud83d\udcb9 Fetching live market data..."}
+
+event: chunk
+data: {"text": "\ud83d\udcc8 Fetching live market data...\n\n"}
+
+event: chunk
+data: {"text": "**\ud83c\uddee\ud83c\uddf3 Gold Prices in India** (converted at USD/INR \u20b990.97)\n- **24K Gold:** \u20b915,232.72/gram | \u20b9152,327.20/10 grams\n- **22K Gold:** \u20b913,963.33/gram | \u20b9139,633.27/10 grams\n- **18K Gold:** \u20b911,424.54/gram"}
+
+event: result
+data: {"session_id": "a7bbe10d-6c7e-4587-8d65-126bd1d90a64", "intent": "finance", "text": "\ud83d\udcc8 Fetching live market data...\n\n**\ud83c\uddee\ud83c\uddf3 Gold Prices in India** (converted at USD/INR \u20b990.97)\n- **24K Gold:** \u20b915,232.72/gram | \u20b9152,327.20/10 grams\n- **22K Gold:** \u20b913,963.33/gram | \u20b9139,633.27/10 grams\n- **18K Gold:** \u20b911,424.54/gram"}
+
+event: summary
+data: {"text": "\ud83d\udcc8 Fetching live market data...\n\n**\ud83c\uddee\ud83c\uddf3 Gold Prices in India** (converted at USD/INR \u20b990.97)\n- **24K Gold:** \u20b915,232.72/gram | \u20b9152,327.20/10 grams\n- **22K Gold:** \u20b913,963.33/gram | \u20b9139,633.27/10 grams\n- **18K Gold:** \u20b911,424.54/gram"}
+
+event: done
+data: {"session_id": "a7bbe10d-6c7e-4587-8d65-126bd1d90a64"}
+

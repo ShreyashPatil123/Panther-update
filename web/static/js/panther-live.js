@@ -65,6 +65,12 @@
   let playbackQueue = [];
   let isPlaying = false;
 
+  // ── Agent integration state ──────────────────────────────────────
+  let agentSessionId = null;        // Voice session ID (created on first command)
+  let transcriptBuffer = '';        // Accumulates Gemini text within one turn
+  let isProcessingAgent = false;    // Prevent overlapping agent calls
+  let pendingConfirmation = null;   // Stores pending destructive action
+
   const MIC_ON_PATH = 'M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.49 6-3.31 6-6.72h-1.7z';
   const MIC_OFF_PATH = 'M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z';
 
@@ -87,11 +93,13 @@ RULES:
      2. Three.js Particle Bubble
   ══════════════════════════════════════════════════════════ */
   const STATE_CONFIG = {
-    idle:               { primaryColor: 0xFF9A3C, speed: 0.3, turbulence: 0.02, spread: 2.0 },
-    listening:          { primaryColor: 0xFF6B35, speed: 1.5, turbulence: 0.15, spread: 2.8 },
-    speaking:           { primaryColor: 0xFFAA5C, speed: 1.0, turbulence: 0.08, spread: 2.4 },
-    processing:         { primaryColor: 0xFFCC80, speed: 0.7, turbulence: 0.05, spread: 2.2 },
-    'timeout-warning':  { primaryColor: 0xFF4444, speed: 0.5, turbulence: 0.03, spread: 2.0 },
+    idle:                    { primaryColor: 0xFF9A3C, speed: 0.3, turbulence: 0.02, spread: 2.0 },
+    listening:               { primaryColor: 0xFF6B35, speed: 1.5, turbulence: 0.15, spread: 2.8 },
+    speaking:                { primaryColor: 0xFFAA5C, speed: 1.0, turbulence: 0.08, spread: 2.4 },
+    processing:              { primaryColor: 0xFFCC80, speed: 0.7, turbulence: 0.05, spread: 2.2 },
+    'agent-processing':      { primaryColor: 0x9C27B0, speed: 1.2, turbulence: 0.12, spread: 2.6 },
+    'awaiting-confirmation': { primaryColor: 0xFF9800, speed: 0.8, turbulence: 0.10, spread: 2.4 },
+    'timeout-warning':       { primaryColor: 0xFF4444, speed: 0.5, turbulence: 0.03, spread: 2.0 },
   };
   const PARTICLE_COUNT = 2500;
   let bubbleAnimId = null;
@@ -245,23 +253,33 @@ RULES:
           for (const part of data.serverContent.modelTurn.parts) {
             if (part.text) {
               console.log('[Panther Live] AI text:', part.text);
+              transcriptBuffer += part.text;
               setResponse(part.text);
             }
             if (part.inlineData?.mimeType?.startsWith('audio/')) {
               setState('speaking');
-              // Queue audio for sequential playback (like reference project)
               queueAudioPlayback(part.inlineData.data);
             }
           }
         }
 
-        // Turn complete
+        // Turn complete — route transcript to agent
         if (data.serverContent?.turnComplete) {
           console.log('[Panther Live] Turn complete');
+          const transcript = transcriptBuffer.trim();
+          transcriptBuffer = '';
+
+          // Route the transcript through the agent pipeline
+          if (transcript) {
+            routeTranscript(transcript);
+          }
+
           // Wait for audio queue to drain, then switch to listening
           waitForAudioDrain(() => {
-            if (micOn) setState('listening');
-            else setState('idle');
+            if (!isProcessingAgent) {
+              if (micOn) setState('listening');
+              else setState('idle');
+            }
           });
         }
       } catch (err) {
@@ -560,6 +578,12 @@ RULES:
     el.response.classList.remove('visible');
     el.agentBadge.classList.remove('visible');
 
+    // Reset agent state for new overlay session
+    agentSessionId = null;
+    transcriptBuffer = '';
+    isProcessingAgent = false;
+    pendingConfirmation = null;
+
     initParticleBubble();
     if (window._pantherBubbleStart) window._pantherBubbleStart();
 
@@ -574,6 +598,14 @@ RULES:
     stopMic();
     clearIdleTimer();
     clearPlaybackQueue();
+
+    // Close agent session (fire-and-forget)
+    if (agentSessionId) {
+      fetch(`/api/voice-session/${agentSessionId}/close`, { method: 'POST' })
+        .catch(() => {});
+      agentSessionId = null;
+    }
+
     if (geminiWs) { geminiWs.close(); geminiWs = null; wsReady = false; }
     if (playbackContext) {
       playbackContext.close().catch(() => {});
@@ -616,7 +648,220 @@ RULES:
   }
 
   /* ══════════════════════════════════════════════════════════
-     9. Event Listeners
+     9. Agent Integration — Voice → Backend Pipeline
+  ══════════════════════════════════════════════════════════ */
+
+  /**
+   * Route a Gemini transcript to the backend or handle confirmation.
+   */
+  async function routeTranscript(transcript) {
+    // Handle pending confirmation response ("yes" / "cancel")
+    if (pendingConfirmation) {
+      await handleConfirmationResponse(transcript);
+      return;
+    }
+
+    // Very short utterances (≤3 words) stay in Gemini Live
+    const wordCount = transcript.trim().split(/\s+/).length;
+    if (wordCount <= 3) {
+      console.log('[Panther Live] Short utterance — staying in Gemini Live');
+      return;
+    }
+
+    // Don't overlap concurrent agent calls
+    if (isProcessingAgent) {
+      console.warn('[Panther Live] Agent already processing — ignoring');
+      return;
+    }
+
+    // Route to backend AgentOrchestrator
+    console.log('[Panther Live] Routing to agent:', transcript.slice(0, 60));
+    await callVoiceCommandAPI(transcript);
+  }
+
+  /**
+   * POST transcript to /api/voice-command, consume SSE stream.
+   */
+  async function callVoiceCommandAPI(text, confirmed = false) {
+    isProcessingAgent = true;
+    setState('agent-processing');
+    setStatusText('🧠 Processing with PANTHER agent...');
+
+    try {
+      const response = await fetch('/api/voice-command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          session_id: agentSessionId,
+          confirmed,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      await consumeSSEStream(response);
+
+    } catch (err) {
+      console.error('[Panther Live] API call failed:', err);
+      showError('Connection error. Please try again.');
+    } finally {
+      isProcessingAgent = false;
+      if (micOn) setState('listening');
+      else setState('idle');
+    }
+  }
+
+  /**
+   * Consume SSE events from /api/voice-command response.
+   */
+  async function consumeSSEStream(response) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split('\n\n');
+      buffer = events.pop(); // Keep incomplete trailing chunk
+
+      for (const eventStr of events) {
+        if (!eventStr.trim()) continue;
+
+        const lines = eventStr.split('\n');
+        const eventType = lines.find(l => l.startsWith('event:'))?.slice(7).trim();
+        const dataLine  = lines.find(l => l.startsWith('data:'))?.slice(5).trim();
+        if (!eventType || !dataLine) continue;
+
+        let data;
+        try { data = JSON.parse(dataLine); }
+        catch { continue; }
+
+        switch (eventType) {
+          case 'session':
+            agentSessionId = data.session_id;
+            console.log('[Panther Live] Agent session:', data.session_id);
+            break;
+
+          case 'progress':
+            setStatusText(data.message);
+            break;
+
+          case 'chunk':
+            // Streamed agent response chunk
+            appendResponse(data.text);
+            break;
+
+          case 'confirmation_required':
+            await handleConfirmationGate(data);
+            return; // Stop consuming — new stream after confirm
+
+          case 'result':
+            setResponse(data.text);
+            console.log(`[Panther Live] Agent result (${data.intent}):`, data.text.slice(0, 100));
+            break;
+
+          case 'summary':
+            // Speak short summary via Gemini TTS
+            speakSummary(data.text);
+            break;
+
+          case 'error':
+            showError(data.message);
+            speakSummary('I ran into an issue. ' + data.message);
+            break;
+
+          case 'done':
+            syncSidebarSessions();
+            break;
+        }
+      }
+    }
+  }
+
+  /**
+   * Append text to the response area (for streaming chunks).
+   */
+  function appendResponse(text) {
+    if (el.responseText && el.response) {
+      el.response.classList.add('visible');
+      el.responseText.textContent += text;
+    }
+  }
+
+  /**
+   * Handle confirmation gate for destructive actions.
+   */
+  async function handleConfirmationGate(data) {
+    pendingConfirmation = data;
+    setState('awaiting-confirmation');
+    setStatusText('⚠️ ' + data.prompt);
+    setResponse(data.prompt);
+
+    // Speak confirmation prompt via Gemini
+    speakSummary(data.prompt);
+  }
+
+  /**
+   * Handle user's confirmation response ("yes" / "cancel").
+   */
+  async function handleConfirmationResponse(transcript) {
+    const response = transcript.toLowerCase().trim();
+    const yesWords = ['yes', 'yeah', 'yep', 'confirm', 'proceed', 'ok', 'okay', 'do it', 'go ahead'];
+
+    if (yesWords.some(w => response.includes(w))) {
+      const pending = pendingConfirmation;
+      pendingConfirmation = null;
+      console.log('[Panther Live] Confirmed:', pending.original_text);
+      await callVoiceCommandAPI(pending.original_text, true);
+    } else {
+      pendingConfirmation = null;
+      setStatusText('Cancelled.');
+      speakSummary('Okay, I cancelled that.');
+      if (micOn) setState('listening');
+      else setState('idle');
+    }
+  }
+
+  /**
+   * Speak a summary text via Gemini Live (send as text input for TTS).
+   */
+  function speakSummary(text) {
+    if (!text || !geminiWs || geminiWs.readyState !== WebSocket.OPEN || !wsReady) {
+      console.log('[Panther Live] Cannot speak summary — WS not ready');
+      return;
+    }
+    // Send text as realtimeInput text for the model to speak aloud
+    geminiWs.send(JSON.stringify({
+      clientContent: {
+        turns: [{
+          role: 'user',
+          parts: [{ text: `Please read this aloud naturally: "${text}"` }],
+        }],
+        turnComplete: true,
+      },
+    }));
+  }
+
+  /**
+   * Refresh the sidebar session list so voice sessions appear.
+   */
+  function syncSidebarSessions() {
+    if (typeof window.refreshSessionList === 'function') {
+      window.refreshSessionList();
+    } else if (window.chatWS?.readyState === WebSocket.OPEN) {
+      window.chatWS.send(JSON.stringify({ type: 'list_sessions' }));
+    }
+    console.log('[Panther Live] Sidebar sessions synced');
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     10. Event Listeners
   ══════════════════════════════════════════════════════════ */
   el.micBtn.addEventListener('click', toggleMic);
   el.closeBtn.addEventListener('click', closeOverlay);
@@ -634,9 +879,9 @@ RULES:
   });
 
   /* ══════════════════════════════════════════════════════════
-     10. Public API
+     11. Public API
   ══════════════════════════════════════════════════════════ */
   window.PantherLive = { open: openOverlay, close: closeOverlay };
 
-  console.log('[Panther Live] Module loaded (fixed streaming)');
+  console.log('[Panther Live] Module loaded (agent integration)');
 })();

@@ -1,0 +1,60 @@
+event: session
+data: {"session_id": "64c52e34-fb8b-4c44-aa38-15bcf3cdcfc3"}
+
+event: progress
+data: {"step": "routing", "message": "Understanding your request..."}
+
+event: progress
+data: {"step": "search", "message": "\ud83d\udd0d Searching the web..."}
+
+event: progress
+data: {"step": "scrape", "message": "\ud83d\udcc4 Reading relevant pages..."}
+
+event: progress
+data: {"step": "synthesize", "message": "\ud83e\udde0 Synthesizing findings..."}
+
+event: chunk
+data: {"text": "\ud83d\udd0d Starting research on: **gold prices today in India**\n\n"}
+
+event: chunk
+data: {"text": "Searching the web...\n"}
+
+event: chunk
+data: {"text": "\n\u2705 Found **5** sources\n\n"}
+
+event: chunk
+data: {"text": "**Sources consulted:**\n"}
+
+event: chunk
+data: {"text": "1. [Gold Rate Today (23 February 2026), Gold Price in India](https://www.goodreturns.in/gold-rates/)\n"}
+
+event: chunk
+data: {"text": "2. [India Gold Price Live - 24-hour (gold prices in Indian rupees INR)](https://www.livepriceofgold.com/india-gold-price.html)\n"}
+
+event: chunk
+data: {"text": "3. [Gold Rate Today in India, 22 Feb 2026 - Gold Price in India](https://www.goldpriceindia.com/)\n"}
+
+event: chunk
+data: {"text": "4. [Gold Price Today in India | Gold Gram 24K, 22K, 18K in Indian Rupee](https://www.goldrate24.com/gold-prices/asia/india/)\n"}
+
+event: chunk
+data: {"text": "5. [Gold Price Today in India | GoldRate](https://goldrate.com/en/gold/india)\n"}
+
+event: chunk
+data: {"text": "\n---\n\n"}
+
+event: chunk
+data: {"text": "**Research Summary:**\n\n"}
+
+event: chunk
+data: {"text": "**Current Gold Prices in India**\n\nAccording to various sources, the current gold prices in India are as follows:\n\n* **Gold Rate Today in India** (Source 1: Gold Price in India):\n\t+ 24K Gold Price: \u20b9160,677 per 10 grams\n\t+ 22K Gold Price: \u20b9147,287 per 10 grams\n* **Live Gold Price in India** (Source 2: LivePriceofGold.com):\n\t+ 24K Gold Price: \u20b915,228.90 per gram\n\t+ 22K Gold Price: \u20b913,980.13 per gram\n* **Gold Price Today in India** (Source 3: GoldPriceIndia.com):\n\t+ 24K Gold Price: \u20b9160,677 per 10 grams\n\t+ 22K Gold Price: \u20b9147,287 per 10 grams\n* **Gold Price Today in India** (Source 4: GoldRate24.com):\n\t+ 24K Gold Price: \u20b915,228.90 per gram\n\t+ 22K Gold Price: \u20b913,980.13 per gram\n\n**Key Facts:**\n\n* The current gold prices in India vary slightly across different sources, but the general trend is the same.\n* The prices are given in rupees per gram, ounce, and tola for different karats (24K, 22K, 18K, etc.).\n* The prices are subject to change based on market fluctuations and other factors.\n\n**Historical Data:**\n\n* According to Source 3, the highest gold price in India in the month of February 2026 was \u20b9160,677 per 10 grams, while the lowest gold price was \u20b9133,988 per 10 grams.\n* The highest gold price in India in the month of January 2026 was \u20b9178,002 per 10 grams, while the lowest gold price was \u20b9135,257 per 10 grams.\n\n**Sources:**\n\n1. Gold Price in India (Source 1)\n2. LivePriceofGold.com (Source 2)\n3. GoldPriceIndia.com (Source 3)\n4. GoldRate24.com (Source 4)\n5. GoldRate (Source 5)\n\nNote: The prices mentioned above are subject to change and may not reflect the current prices. It's always best to check the current prices from a reliable source for the most up-to-date information."}
+
+event: result
+data: {"session_id": "64c52e34-fb8b-4c44-aa38-15bcf3cdcfc3", "intent": "research", "text": "\ud83d\udd0d Starting research on: **gold prices today in India**\n\nSearching the web...\n\n\u2705 Found **5** sources\n\n**Sources consulted:**\n1. [Gold Rate Today (23 February 2026), Gold Price in India](https://www.goodreturns.in/gold-rates/)\n2. [India Gold Price Live - 24-hour (gold prices in Indian rupees INR)](https://www.livepriceofgold.com/india-gold-price.html)\n3. [Gold Rate Today in India, 22 Feb 2026 - Gold Price in India](https://www.goldpriceindia.com/)\n4. [Gold Price Today in India | Gold Gram 24K, 22K, 18K in Indian Rupee](https://www.goldrate24.com/gold-prices/asia/india/)\n5. [Gold Price Today in India | GoldRate](https://goldrate.com/en/gold/india)\n\n---\n\n**Research Summary:**\n\n**Current Gold Prices in India**\n\nAccording to various sources, the current gold prices in India are as follows:\n\n* **Gold Rate Today in India** (Source 1: Gold Price in India):\n\t+ 24K Gold Price: \u20b9160,677 per 10 grams\n\t+ 22K Gold Price: \u20b9147,287 per 10 grams\n* **Live Gold Price in India** (Source 2: LivePriceofGold.com):\n\t+ 24K Gold Price: \u20b915,228.90 per gram\n\t+ 22K Gold Price: \u20b913,980.13 per gram\n* **Gold Price Today in India** (Source 3: GoldPriceIndia.com):\n\t+ 24K Gold Price: \u20b9160,677 per 10 grams\n\t+ 22K Gold Price: \u20b9147,287 per 10 grams\n* **Gold Price Today in India** (Source 4: GoldRate24.com):\n\t+ 24K Gold Price: \u20b915,228.90 per gram\n\t+ 22K Gold Price: \u20b913,980.13 per gram\n\n**Key Facts:**\n\n* The current gold prices in India vary slightly across different sources, but the general trend is the same.\n* The prices are given in rupees per gram, ounce, and tola for different karats (24K, 22K, 18K, etc.).\n* The prices are subject to change based on market fluctuations and other factors.\n\n**Historical Data:**\n\n* According to Source 3, the highest gold price in India in the month of February 2026 was \u20b9160,677 per 10 grams, while the lowest gold price was \u20b9133,988 per 10 grams.\n* The highest gold price in India in the month of January 2026 was \u20b9178,002 per 10 grams, while the lowest gold price was \u20b9135,257 per 10 grams.\n\n**Sources:**\n\n1. Gold Price in India (Source 1)\n2. LivePriceofGold.com (Source 2)\n3. GoldPriceIndia.com (Source 3)\n4. GoldRate24.com (Source 4)\n5. GoldRate (Source 5)\n\nNote: The prices mentioned above are subject to change and may not reflect the current prices. It's always best to check the current prices from a reliable source for the most up-to-date information."}
+
+event: summary
+data: {"text": "The current 24K gold price in India is \u20b915,228.90 per gram. The current 22K gold price in India is \u20b913,980.13 per gram."}
+
+event: done
+data: {"session_id": "64c52e34-fb8b-4c44-aa38-15bcf3cdcfc3"}
+
