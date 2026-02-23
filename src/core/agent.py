@@ -619,13 +619,28 @@ class AgentOrchestrator:
             "crude oil price", "oil price", "commodity price",
             "24 karat", "22 karat", "24k gold", "22k gold",
         ]
+        chat_keywords = [
+            "hi", "hello", "hey", "thanks", "thank you", "how are you",
+            "who are you", "what is your name", "good morning", "good evening",
+            "good night", "bye", "goodbye", "ok", "okay", "cool", "nice",
+        ]
 
+        # ── Tier 1: keyword fast-path for unambiguous intents ─────────────
         if any(kw in message_lower for kw in file_keywords):
             return "file_operation"
         if any(kw in message_lower for kw in browser_keywords):
             return "browser_task"
         if any(kw in message_lower for kw in finance_keywords):
             return "finance"
+        if any(kw in message_lower for kw in chat_keywords):
+            return "chat"
+
+        # ── Tier 1.5: Length-based fast-path ──────────────────────────────
+        # Short phrases (under 3 words) that didn't match specific command
+        # keywords are almost certainly conversational.
+        words = message.split()
+        if len(words) <= 3 and len(words) > 0:
+            return "chat"
 
         # ── Tier 2: LLM-powered classification ────────────────────────────
         # The LLM is far better at recognizing when a question needs live
@@ -698,10 +713,16 @@ class AgentOrchestrator:
             },
         ]
 
+        # Use a lightning-fast 8B model for classification to minimize latency
+        # If no specific fast model is set, we fallback to default
+        fast_model = self.config.default_model
+        if self.active_provider == "nvidia":
+            fast_model = "meta/llama-3.1-8b-instruct"
+
         result = ""
         async for chunk in self.nvidia_client.chat_completion(
             classification_prompt,
-            model=self.config.default_model,
+            model=fast_model,
             stream=False,
             max_tokens=8,
             temperature=0.0,

@@ -462,6 +462,13 @@ body {
   gap: 22px;
 }
 
+/* Turn container grouping User + AI bubbles */
+.turn-container {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
 /* Message bubbles */
 .msg {
   display: flex;
@@ -609,11 +616,12 @@ body {
   color: var(--accent);
 }
 
-/* Message Actions (Copy, Regenerate) */
+/* Message Actions (Copy, Regenerate, Pagination) */
 .msg-actions {
   display: flex;
+  align-items: center;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: 8px;
   opacity: 0;
   transition: opacity var(--transition);
 }
@@ -623,19 +631,62 @@ body {
 .action-btn {
   background: transparent;
   color: var(--text-muted);
-  border: none;
-  border-radius: 4px;
-  padding: 4px 6px;
-  font-size: 11px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
   cursor: pointer;
-  transition: var(--transition);
+  transition: all 0.2s ease;
 }
 .action-btn:hover {
   background: var(--surface);
   color: var(--text-primary);
+  border-color: var(--border);
+  transform: translateY(-1px);
+}
+
+/* Pagination Toggle within Actions */
+.pagination-toggle {
+  display: flex;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px;
+  margin-right: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  user-select: none;
+}
+.pagination-toggle .page-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.pagination-toggle .page-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.pagination-toggle .page-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.pagination-toggle .page-text {
+  min-width: 32px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Code block headers */

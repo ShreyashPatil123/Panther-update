@@ -191,7 +191,7 @@ function handleServerMessage(msg) {
 /* ══════════════════════════════════════════════════════════
    Sending messages
 ══════════════════════════════════════════════════════════ */
-async function sendMessage() {
+async function sendMessage(isRegeneration = false) {
   const text = el.messageInput.value.trim();
   if (!text || state.isStreaming) return;
 
@@ -199,11 +199,13 @@ async function sendMessage() {
   el.hero.style.display = "none";
   el.chatArea.style.display = "flex";
 
-  // Append user bubble
-  const displayText = state.pendingFiles.length
-    ? text + "\n" + state.pendingFiles.map((f) => `📎 ${f.name}`).join("  ")
-    : text;
-  appendMessage(displayText, true);
+  // Append user bubble ONLY if this is not a regeneration
+  if (!isRegeneration) {
+    const displayText = state.pendingFiles.length
+      ? text + "\n" + state.pendingFiles.map((f) => `📎 ${f.name}`).join("  ")
+      : text;
+    appendMessage(displayText, true);
+  }
 
   // Send over WS
   const attachments = state.pendingFiles.map((f) => f.path);
@@ -234,9 +236,21 @@ async function sendMessage() {
 /* ══════════════════════════════════════════════════════════
    Chat rendering
 ══════════════════════════════════════════════════════════ */
-function appendMessage(text, isUser) {
+function appendMessage(text, isUser, isRegeneration = false) {
   const msg = document.createElement("div");
   msg.className = `msg ${isUser ? "user" : "ai"}`;
+
+  // If this is a new user message, or we don't have a current turn, create a new Turn Container
+  if (isUser || !state.currentTurn) {
+    const turn = document.createElement("div");
+    turn.className = "turn-container";
+    el.messages.appendChild(turn);
+    state.currentTurn = turn;
+    
+    // Hide typing indicator temporarily if it exists so the message goes above it
+    const typingInd = el.messages.querySelector("#typingIndicator");
+    if (typingInd) el.messages.appendChild(typingInd); 
+  }
 
   const avatar = document.createElement("div");
   avatar.className = "msg-avatar";
@@ -265,7 +279,12 @@ function appendMessage(text, isUser) {
     
     const copyBtn = document.createElement("button");
     copyBtn.className = "action-btn";
-    copyBtn.innerHTML = `📋 Copy`;
+    copyBtn.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+      </svg>
+    `;
     copyBtn.title = "Copy Message";
     copyBtn.onclick = () => {
       // Get pure text without HTML tags for the raw markdown response
@@ -275,12 +294,19 @@ function appendMessage(text, isUser) {
 
     const regenBtn = document.createElement("button");
     regenBtn.className = "action-btn";
-    regenBtn.innerHTML = `↻ Regenerate`;
+    regenBtn.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 2v6h-6"></path>
+        <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+        <path d="M3 22v-6h6"></path>
+        <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+      </svg>
+    `;
     regenBtn.title = "Regenerate Response";
     regenBtn.onclick = () => {
       if (!state.lastUserMsg || state.isStreaming) return;
       el.messageInput.value = state.lastUserMsg;
-      sendMessage();
+      sendMessage(true); // Pass true to indicate regeneration
     };
 
     actions.appendChild(copyBtn);
@@ -293,20 +319,104 @@ function appendMessage(text, isUser) {
 
   msg.appendChild(avatar);
   msg.appendChild(body);
-  el.messages.appendChild(msg);
+  
+  // Append to the current turn container
+  state.currentTurn.appendChild(msg);
 
-  if (!isUser) highlightCode(msg);
+  if (!isUser) {
+    highlightCode(msg);
+    // Manage AI message visibility (pagination) within the turn
+    updateTurnPagination(state.currentTurn);
+  }
+
   scrollToBottom();
   return msg;
+}
+
+// Manages visibility and pagination toggle for Multiple AI responses in a single turn
+function updateTurnPagination(turnElement) {
+  const aiMessages = Array.from(turnElement.querySelectorAll(".msg.ai"));
+  if (aiMessages.length === 0) return;
+
+  // By default, showing the last generated response if none specified
+  aiMessages.forEach((m, idx) => {
+    // Only block display if it's explicitly hidden by the toggle logic
+    // But initially, hide all except the last one
+    m.style.display = (idx === aiMessages.length - 1) ? "flex" : "none";
+  });
+
+  // Remove existing pagination toggles from all AI messages in this turn
+  aiMessages.forEach(m => {
+    const actions = m.querySelector(".msg-actions");
+    if (actions) {
+      const existingPagination = actions.querySelector(".pagination-toggle");
+      if (existingPagination) existingPagination.remove();
+    }
+  });
+
+  // If there's more than 1 AI response, add the `< 1 / 2 >` toggle to the visible one
+  if (aiMessages.length > 1) {
+    aiMessages.forEach((m, idx) => {
+      const actions = m.querySelector(".msg-actions");
+      if (!actions) return;
+
+      const maxIdx = aiMessages.length;
+      const currentIdx = idx + 1;
+
+      const toggle = document.createElement("div");
+      toggle.className = "pagination-toggle";
+      toggle.innerHTML = `
+        <button class="page-btn prev-btn" ${currentIdx === 1 ? "disabled" : ""}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        </button>
+        <div class="page-text">${currentIdx} / ${maxIdx}</div>
+        <button class="page-btn next-btn" ${currentIdx === maxIdx ? "disabled" : ""}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </button>
+      `;
+
+      toggle.querySelector(".prev-btn").onclick = (e) => {
+        if (currentIdx > 1) switchTurnResponse(turnElement, idx - 1);
+      };
+      toggle.querySelector(".next-btn").onclick = (e) => {
+        if (currentIdx < maxIdx) switchTurnResponse(turnElement, idx + 1);
+      };
+
+      // Prepend the toggle before Copy/Regen
+      actions.insertBefore(toggle, actions.firstChild);
+    });
+  }
+}
+
+function switchTurnResponse(turnElement, targetIndex) {
+  const aiMessages = Array.from(turnElement.querySelectorAll(".msg.ai"));
+  aiMessages.forEach((m, idx) => {
+    m.style.display = (idx === targetIndex) ? "flex" : "none";
+  });
 }
 
 function restoreHistory(history) {
   el.hero.style.display = "none";
   el.chatArea.style.display = "flex";
   el.messages.innerHTML = "";
+  state.currentTurn = null; // Reset turn
+
+  let lastUserMsg = null;
+  
   for (const m of history) {
-    if (m.role === "user" || m.role === "assistant") {
-      appendMessage(m.content || "", m.role === "user");
+    if (m.role === "user") {
+      // If this user message is strictly identical to the last one,
+      // it means this was a "Regenerate" click in a previous session.
+      // E.g., user asks X, AI answers, user asks X (regenerate), AI answers.
+      // So we do NOT append a new user bubble, we just re-use the current turn.
+      if (m.content === lastUserMsg && state.currentTurn) {
+        // Skip adding duplicate user bubble
+      } else {
+        lastUserMsg = m.content;
+        appendMessage(m.content || "", true);
+      }
+    } else if (m.role === "assistant") {
+      appendMessage(m.content || "", false);
     }
   }
 }
@@ -381,7 +491,11 @@ function highlightCode(container) {
 function copyToClipboard(text, btn, successText) {
   navigator.clipboard.writeText(text).then(() => {
     const original = btn.innerHTML;
-    btn.innerHTML = `✓ ${successText}`;
+    btn.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="20 6 9 17 4 12"></polyline>
+      </svg>
+    `;
     setTimeout(() => { btn.innerHTML = original; }, 2000);
   });
 }
