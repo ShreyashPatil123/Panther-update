@@ -1217,6 +1217,7 @@ Guidelines:
         """Auto-generate a session title from the first user message.
 
         Only titles sessions that still have the default 'Session xxxx' name.
+        Uses the LLM to generate a concise, descriptive title.
         """
         try:
             sessions = await self.memory.get_sessions(limit=50)
@@ -1229,13 +1230,43 @@ Guidelines:
             # Only auto-title if still using default name
             if title and not title.startswith("Session "):
                 return
-            # Generate short title from message
-            short = message.strip()
-            if len(short) > 40:
-                short = short[:40].rsplit(" ", 1)[0] + "…"
-            if short:
+
+            # Ask LLM to generate a short descriptive title
+            system_prompt = (
+                "You are a chat title generator. Analyze the user's message.\n\n"
+                "Rules:\n"
+                "- Output ONLY a 3-5 word title.\n"
+                "- Make it short, descriptive, and engaging.\n"
+                "- Extract the core topic, action, or question.\n"
+                "- Use Title Case.\n"
+                "- Do NOT use quotation marks or punctuation at the end.\n"
+            )
+            
+            try:
+                result = ""
+                async for chunk in self.nvidia_client.chat_completion(
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": message},
+                    ],
+                    model=self.config.default_model,
+                    stream=False,
+                    max_tokens=15,
+                    temperature=0.3,
+                ):
+                    result += chunk
+                
+                short_title = result.strip().strip('"\'').rstrip('.')
+            except Exception as llm_err:
+                logger.warning(f"LLM auto-title failed, falling back to substring: {llm_err}")
+                # Fallback to simple substring
+                short_title = message.strip()
+                if len(short_title) > 40:
+                    short_title = short_title[:40].rsplit(" ", 1)[0] + "…"
+
+            if short_title:
                 await self.memory.update_session_title(
-                    self.current_session_id, short
+                    self.current_session_id, short_title
                 )
         except Exception as e:
             logger.debug(f"Auto-title failed (non-critical): {e}")

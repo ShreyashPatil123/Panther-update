@@ -66,6 +66,10 @@ const el = {
   usageStats: $("usageStats"),
   usageWarning: $("usageWarning"),
   resetUsageBtn: $("resetUsageBtn"),
+  deleteConfirmOverlay: $("deleteConfirmOverlay"),
+  deleteConfirmClose: $("deleteConfirmClose"),
+  deleteConfirmCancel: $("deleteConfirmCancel"),
+  deleteConfirmBtn: $("deleteConfirmBtn"),
 };
 
 /* ══════════════════════════════════════════════════════════
@@ -343,7 +347,21 @@ function switchSession(sid) {
 }
 
 function deleteSession(sid) {
-  wsSend({ action: "delete_session", session_id: sid });
+  state.sessionToDelete = sid;
+  el.deleteConfirmOverlay.style.display = "flex";
+}
+
+function confirmDeleteSession() {
+  if (state.sessionToDelete) {
+    wsSend({ action: "delete_session", session_id: state.sessionToDelete });
+    state.sessionToDelete = null;
+    el.deleteConfirmOverlay.style.display = "none";
+  }
+}
+
+function cancelDeleteSession() {
+  state.sessionToDelete = null;
+  el.deleteConfirmOverlay.style.display = "none";
 }
 
 function newChat() {
@@ -683,6 +701,14 @@ el.settingsOverlay.addEventListener("click", (e) => {
     el.settingsOverlay.style.display = "none";
 });
 el.saveSettingsBtn.addEventListener("click", saveSettings);
+
+// Delete Confirmation
+el.deleteConfirmClose.addEventListener("click", cancelDeleteSession);
+el.deleteConfirmCancel.addEventListener("click", cancelDeleteSession);
+el.deleteConfirmOverlay.addEventListener("click", (e) => {
+  if (e.target === el.deleteConfirmOverlay) cancelDeleteSession();
+});
+el.deleteConfirmBtn.addEventListener("click", confirmDeleteSession);
 
 // Panther Live button — opens the voice assistant overlay on the same page
 el.geminiLiveBtn.addEventListener('click', () => {

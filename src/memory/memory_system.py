@@ -197,6 +197,15 @@ class MemorySystem:
                 except Exception as e:
                     logger.debug(f"ChromaDB add failed (non-critical): {e}")
 
+            # Ensure session exists without resetting title/created_at if it does
+            cursor.execute(
+                """
+                INSERT OR IGNORE INTO sessions (id, title)
+                VALUES (?, ?)
+                """,
+                (session_id, f"Session {session_id[:8]}"),
+            )
+
             # Update session timestamp (preserve title)
             cursor.execute(
                 """

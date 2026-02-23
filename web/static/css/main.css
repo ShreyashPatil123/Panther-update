@@ -1782,3 +1782,38 @@ body {
   color: var(--accent);
   text-decoration: none;
 }
+
+/* Modals */
+.btn-primary {
+  padding: 10px 20px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 600;
+  transition: var(--transition);
+}
+.btn-primary:hover {
+  background: #ff7b4b;
+  box-shadow: 0 0 16px rgba(255, 107, 53, 0.4);
+}
+
+.btn-danger {
+  padding: 10px 20px;
+  background: rgba(255, 68, 68, 0.1);
+  color: #ff4444;
+  border: 1px solid rgba(255, 68, 68, 0.3);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 600;
+  transition: var(--transition);
+}
+.btn-danger:hover {
+  background: rgba(255, 68, 68, 0.2);
+  border-color: rgba(255, 68, 68, 0.5);
+  box-shadow: 0 0 16px rgba(255, 68, 68, 0.2);
+}
+.btn-danger:active {
+  transform: translateY(0);
+}
