@@ -74,6 +74,8 @@ const el = {
   deleteConfirmClose: $("deleteConfirmClose"),
   deleteConfirmCancel: $("deleteConfirmCancel"),
   deleteConfirmBtn: $("deleteConfirmBtn"),
+  inputBar: document.querySelector(".input-bar"),
+  scrollToBottomBtn: $("scrollToBottomBtn"),
 };
 
 /* ══════════════════════════════════════════════════════════
@@ -844,11 +846,21 @@ function autoResizeInput() {
 /* ══════════════════════════════════════════════════════════
    Event listeners
 ══════════════════════════════════════════════════════════ */
-// Smart auto-scroll checking
+// Smart auto-scroll checking & Scroll to Bottom button toggle
 el.chatArea.addEventListener("scroll", () => {
-  // If user scrolls up by more than 10px from the bottom, pause auto-scroll
   const distanceToBottom = el.chatArea.scrollHeight - el.chatArea.scrollTop - el.chatArea.clientHeight;
-  state.userScrolledUp = distanceToBottom > 10;
+  state.userScrolledUp = distanceToBottom > 80; // slightly larger threshold for button trigger
+  
+  // Toggle visible class for smooth CSS transitions
+  el.scrollToBottomBtn.classList.toggle("visible", state.userScrolledUp);
+});
+
+// Scroll to bottom click
+el.scrollToBottomBtn.addEventListener("click", () => {
+  state.userScrolledUp = false;
+  scrollToBottom();
+  el.scrollToBottomBtn.classList.remove("visible");
+  el.messageInput.focus();
 });
 
 // Send & Stop
@@ -869,12 +881,34 @@ el.sendBtn.addEventListener("click", () => {
   }
 });
 el.messageInput.addEventListener("keydown", (e) => {
+  // Ctrl+Enter or Cmd+Enter to send
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    sendMessage();
+    return;
+  }
+  
+  // Regular Enter (no shift) to send (existing behavior maintained)
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     sendMessage();
   }
 });
-el.messageInput.addEventListener("input", autoResizeInput);
+
+// Input event for resizing AND empty-state animation toggle
+el.messageInput.addEventListener("input", () => {
+  autoResizeInput();
+  if (el.messageInput.value.trim() === "") {
+    el.inputBar.classList.add("is-empty");
+  } else {
+    el.inputBar.classList.remove("is-empty");
+  }
+});
+
+// Initial state for input bar
+if (el.messageInput.value.trim() === "") {
+  el.inputBar.classList.add("is-empty");
+}
 
 // Chips
 document.querySelectorAll(".chip").forEach((chip) => {
@@ -902,10 +936,31 @@ document.addEventListener("paste", (e) => {
   if (files.length) handleFileSelect(files);
 });
 
-// Drag & drop
+// Advanced Drag & Drop with visual feedback
+let dragCounter = 0;
+document.addEventListener("dragenter", (e) => {
+  e.preventDefault();
+  dragCounter++;
+  if (dragCounter === 1) {
+    el.inputBar.classList.add("drag-over");
+  }
+});
+
+document.addEventListener("dragleave", (e) => {
+  e.preventDefault();
+  dragCounter--;
+  if (dragCounter === 0) {
+    el.inputBar.classList.remove("drag-over");
+  }
+});
+
 document.addEventListener("dragover", (e) => e.preventDefault());
+
 document.addEventListener("drop", (e) => {
   e.preventDefault();
+  dragCounter = 0;
+  el.inputBar.classList.remove("drag-over");
+  
   const files = Array.from(e.dataTransfer.files);
   if (files.length) handleFileSelect(files);
 });
@@ -924,10 +979,33 @@ document.addEventListener("click", () => {
 el.settingsBtn.addEventListener("click", openSettings);
 el.settingsClose.addEventListener("click", () => {
   el.settingsOverlay.style.display = "none";
+  el.messageInput.focus();
 });
 el.settingsOverlay.addEventListener("click", (e) => {
-  if (e.target === el.settingsOverlay)
+  if (e.target === el.settingsOverlay) {
     el.settingsOverlay.style.display = "none";
+    el.messageInput.focus();
+  }
+});
+
+// Global ESC shortcut to close modals
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    // Close settings if open
+    if (el.settingsOverlay.style.display !== "none") {
+      el.settingsOverlay.style.display = "none";
+      el.messageInput.focus();
+    }
+    // Close category popup if open
+    if (el.categoryPopup.style.display !== "none") {
+      el.categoryPopup.style.display = "none";
+      el.messageInput.focus();
+    }
+    // Close model picker if open (if window.PantherModels exists)
+    if (window.PantherModels && typeof window.PantherModels.close === 'function') {
+      window.PantherModels.close();
+    }
+  }
 });
 el.saveSettingsBtn.addEventListener("click", saveSettings);
 

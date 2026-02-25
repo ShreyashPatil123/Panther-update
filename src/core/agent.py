@@ -1,6 +1,7 @@
 """Agent Orchestrator - Central brain that coordinates all capabilities."""
 import asyncio
 import json
+import os
 import re
 from datetime import datetime
 from typing import Any, AsyncIterator, Dict, List, Optional
@@ -175,9 +176,23 @@ class AgentOrchestrator:
         """Lazy-initialize browser controller (async)."""
         if self._browser is None:
             from src.capabilities.browser import BrowserController
-            self._browser = BrowserController()
-            await self._browser.initialize()
-            logger.info("BrowserController initialized")
+
+            # 3-tier Google API key resolution (same as panther_live.py)
+            api_key = getattr(self.config, "google_api_key", None) or ""
+            if not api_key:
+                try:
+                    from src.utils.secure_storage import get_google_api_key
+                    api_key = get_google_api_key() or ""
+                except Exception:
+                    pass
+            if not api_key:
+                api_key = os.getenv("GOOGLE_API_KEY", "")
+
+            if not api_key:
+                logger.warning("No Google API key found for browser automation!")
+
+            self._browser = BrowserController(api_key=api_key)
+            logger.info(f"BrowserController initialized (key={'set' if api_key else 'MISSING'})")
         return self._browser
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -609,7 +624,28 @@ class AgentOrchestrator:
             "search the web", "search online", "look up online", "open a tab",
             "visit the site", "click on", "take a screenshot", "web search",
             "search google", "search bing",
+            # ── Common site-specific phrases ──
+            "go to youtube", "go to google", "go to github", "go to reddit",
+            "go to twitter", "go to facebook", "go to instagram", "go to linkedin",
+            "go to amazon", "go to flipkart", "go to wikipedia", "go to stackoverflow",
+            "open youtube", "open google", "open github", "open reddit",
+            "open twitter", "open amazon", "open flipkart", "open wikipedia",
+            # ── Action-based phrases ──
+            "search on youtube", "search on google", "search youtube", "search on",
+            "fill the form", "fill out the form", "fill form", "submit the form",
+            "automate", "scrape", "extract from website", "extract from page",
+            "open the website", "open the page", "open the site", "open a website",
+            "visit", "go to the",
         ]
+
+        # ── Regex: detect URLs and "go to <site>" patterns ────────────────
+        url_pattern = re.compile(
+            r'(?:go to|open|visit|navigate to|check)\s+'
+            r'(?:https?://)?(?:www\.)?[a-zA-Z0-9][a-zA-Z0-9-]*\.[a-zA-Z]{2,}',
+            re.IGNORECASE,
+        )
+        has_url = bool(re.search(r'https?://|www\.|\.com|\.org|\.net|\.io|\.in|\.co', message_lower))
+
         finance_keywords = [
             "stock price", "share price", "stock market", "market price",
             "gold price", "gold rate", "silver price", "silver rate",
@@ -629,6 +665,8 @@ class AgentOrchestrator:
         if any(kw in message_lower for kw in file_keywords):
             return "file_operation"
         if any(kw in message_lower for kw in browser_keywords):
+            return "browser_task"
+        if url_pattern.search(message) or has_url:
             return "browser_task"
         if any(kw in message_lower for kw in finance_keywords):
             return "finance"
@@ -663,13 +701,13 @@ class AgentOrchestrator:
         return "chat"
 
     async def _llm_classify_intent(self, message: str) -> str:
-        """Use the LLM to classify whether a query needs live internet data.
+        """Use the LLM to classify intent including browser automation.
 
         Args:
             message: User message
 
         Returns:
-            'finance', 'research', or 'chat'
+            'browser_task', 'finance', 'research', or 'chat'
         """
         now = datetime.now().strftime("%B %d, %Y %I:%M %p")
 
@@ -679,7 +717,14 @@ class AgentOrchestrator:
                 "content": (
                     f"You are an intent classifier. The current date and time is: {now}.\n\n"
                     "Your ONLY job is to decide the correct intent for the user's message.\n\n"
-                    "Return EXACTLY one word — 'finance', 'research', or 'chat'.\n\n"
+                    "Return EXACTLY one word — 'browser', 'finance', 'research', or 'chat'.\n\n"
+                    "Return 'browser' if the user wants ANY of these:\n"
+                    "- Open, visit, go to, or navigate to a website or URL\n"
+                    "- Search on a specific website (YouTube, Google, Amazon, etc.)\n"
+                    "- Click, scroll, fill forms, or interact with a web page\n"
+                    "- Take a screenshot of a website\n"
+                    "- Scrape, extract, or automate anything on a website\n"
+                    "- Any task that requires controlling a real web browser\n\n"
                     "Return 'finance' if the query asks about ANY of these:\n"
                     "- Stock prices (Apple, Tesla, Reliance, any company)\n"
                     "- Cryptocurrency prices (Bitcoin, Ethereum, Solana, any coin)\n"
@@ -694,9 +739,7 @@ class AgentOrchestrator:
                     "- Sports scores or live results\n"
                     "- Current events, elections, politics\n"
                     "- Product availability, reviews, or comparisons\n"
-                    "- Any factual question where the answer changes over time\n"
-                    "- Any question containing words like 'today', 'now', 'current', "
-                    "'latest', 'recent', 'this week', 'this month', 'live'\n\n"
+                    "- Any factual question where the answer changes over time\n\n"
                     "Return 'chat' if the query is:\n"
                     "- A greeting or casual conversation\n"
                     "- A coding or technical question\n"
@@ -704,7 +747,7 @@ class AgentOrchestrator:
                     "- A math or logic problem\n"
                     "- A question about timeless general knowledge\n"
                     "- An opinion or advice request\n\n"
-                    "Respond with ONLY the single word 'finance', 'research', or 'chat'. Nothing else."
+                    "Respond with ONLY the single word 'browser', 'finance', 'research', or 'chat'. Nothing else."
                 ),
             },
             {
@@ -714,7 +757,6 @@ class AgentOrchestrator:
         ]
 
         # Use a lightning-fast 8B model for classification to minimize latency
-        # If no specific fast model is set, we fallback to default
         fast_model = self.config.default_model
         if self.active_provider == "nvidia":
             fast_model = "meta/llama-3.1-8b-instruct"
@@ -730,12 +772,17 @@ class AgentOrchestrator:
             result += chunk
 
         intent = result.strip().lower().rstrip(".")
+
+        # Map 'browser' to internal 'browser_task' intent name
+        if intent == "browser":
+            logger.info(f"LLM classified intent as 'browser_task' for: {message[:60]}")
+            return "browser_task"
+
         if intent in ("finance", "research", "chat"):
             logger.info(f"LLM classified intent as '{intent}' for: {message[:60]}")
             return intent
 
         # If LLM returns something unexpected, default to research for safety
-        # (better to search and find real data than hallucinate)
         logger.warning(f"LLM returned unexpected intent '{result}', defaulting to 'research'")
         return "research"
 
@@ -986,106 +1033,56 @@ Guidelines:
         message: str,
         messages: List[Dict[str, str]],
     ) -> AsyncIterator[str]:
-        """Handle browser automation tasks."""
-        yield "Planning browser actions...\n\n"
-
-        # Ask LLM for the URL and what to do
-        plan_messages = messages + [
-            {
-                "role": "system",
-                "content": (
-                    "The user wants a browser task. Respond with ONLY a JSON object "
-                    "(no markdown) with:\n"
-                    '{"url": "full URL to navigate to", '
-                    '"action": "navigate|search|extract|screenshot", '
-                    '"search_query": "query if searching (optional)", '
-                    '"extract_selector": "CSS selector to extract (optional)"}\n'
-                    "For web searches, use https://www.google.com/search?q=QUERY"
-                ),
-            },
-        ]
-
-        plan_json = ""
-        try:
-            async for chunk in self.nvidia_client.chat_completion(
-                plan_messages, model=self.config.default_model,
-                stream=False, max_tokens=256, temperature=0.1,
-            ):
-                plan_json = chunk
-        except Exception as e:
-            logger.error(f"LLM browser planning failed: {e}")
-            async for chunk in self._handle_chat(messages):
-                yield chunk
-            return
-
-        action_plan = self._parse_json_response(plan_json)
-        if not action_plan or "url" not in action_plan:
-            yield "I couldn't determine the browser action. Let me answer instead.\n\n"
-            async for chunk in self._handle_chat(messages):
-                yield chunk
-            return
-
-        url = action_plan.get("url", "")
-        browser_action = action_plan.get("action", "navigate")
-        search_query = action_plan.get("search_query", "")
-        extract_selector = action_plan.get("extract_selector", "body")
-
-        yield f"**Navigating to**: `{url}`\n\n"
+        """Handle browser automation tasks via BrowserSubAgent."""
+        yield "🌐 Launching browser agent...\n\n"
 
         try:
             browser = await self.get_browser()
 
-            # Navigate to URL
-            await browser.navigate(url)
-            yield "✅ Page loaded\n\n"
+            result_text = ""
+            async for event in browser.execute_task_stream(message):
+                event_type = event.get("type")
 
-            extracted_text = ""
-            if browser_action in ("extract", "search", "navigate"):
-                # Take screenshot
-                screenshot_bytes = await browser.take_screenshot()
-                yield f"📸 Screenshot captured ({len(screenshot_bytes):,} bytes)\n\n"
+                if event_type == "plan":
+                    yield f"📋 {event.get('message', '')}\n\n"
 
-                # Extract page text
-                extracted_text = await browser.get_text("body")
-                preview = extracted_text[:1000] if extracted_text else "No text found"
-                yield f"**Page content preview:**\n```\n{preview}\n```\n\n"
+                elif event_type == "action":
+                    yield f"{event.get('message', '')}\n"
+
+                elif event_type == "result":
+                    data = event.get("data", {})
+                    result_text = data.get("result", "Task completed.")
+                    steps = data.get("steps_taken", 0)
+                    final_url = data.get("final_url", "")
+
+                    yield f"\n---\n\n"
+                    yield f"✅ **Browser task complete** ({steps} steps)\n\n"
+                    if final_url:
+                        yield f"**Final URL:** `{final_url}`\n\n"
+                    yield f"**Result:**\n{result_text}\n"
+
+                elif event_type == "error":
+                    error_msg = event.get("message", "Unknown error")
+                    yield f"\n❌ **Browser error:** {error_msg}\n\n"
+                    yield "Let me provide a text-based answer instead:\n\n"
+                    async for chunk in self._handle_chat(messages):
+                        yield chunk
+                    return
+
+            # Store result in memory
+            if result_text:
+                await self.memory.add_message(
+                    "assistant",
+                    result_text,
+                    session_id=self.current_session_id,
+                )
 
         except Exception as e:
-            logger.error(f"Browser error: {e}")
-            yield f"❌ Browser error: {e}\n\n"
+            logger.error(f"Browser task failed: {e}")
+            yield f"❌ Browser initialization failed: {e}\n\n"
             yield "Let me provide a text-based answer instead:\n\n"
             async for chunk in self._handle_chat(messages):
                 yield chunk
-            return
-
-        # Summarize with LLM
-        if extracted_text:
-            yield "---\n\n**Summary:**\n"
-            summary_messages = messages + [
-                {
-                    "role": "assistant",
-                    "content": f"I navigated to {url} and found:\n{extracted_text[:2000]}",
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"Based on the page content from {url}, please answer: {message}"
-                    ),
-                },
-            ]
-            full_response = ""
-            async for chunk in self.nvidia_client.chat_completion(
-                summary_messages, model=self.config.default_model,
-                max_tokens=1024,
-            ):
-                full_response += chunk
-                yield chunk
-
-            await self.memory.add_message(
-                "assistant",
-                full_response,
-                session_id=self.current_session_id,
-            )
 
     async def _handle_research(
         self,
