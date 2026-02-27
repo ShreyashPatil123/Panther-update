@@ -79,6 +79,11 @@
   ══════════════════════════════════════════════════════════ */
   const SYSTEM_PROMPT = `You are PANTHER, an advanced conversational voice AI assistant.
 
+CRITICAL AUTOMATION CONTEXT:
+You are integrated with a powerful backend automation system. You CAN and WILL open apps, go to websites, search the web, and control the browser. 
+If the user asks you to "open YouTube", "go to a website", "search for X", etc. NEVER say "I can't open applications" or "I don't have access". 
+Instead, just say a very brief, natural acknowledgment like "Got it.", "Sure thing.", or "Opening it now." and let the backend system take over.
+
 RULES:
 - Be concise, helpful, and conversational. Respond in 1-3 sentences unless asked for detail.
 - Match the user's energy and speaking pace.
@@ -257,6 +262,10 @@ RULES:
               setResponse(part.text);
             }
             if (part.inlineData?.mimeType?.startsWith('audio/')) {
+              if (window._interruptedGemini) {
+                  // Skip queuing if we are actively executing an agent task
+                  continue;
+              }
               setState('speaking');
               queueAudioPlayback(part.inlineData.data);
             }
@@ -368,6 +377,7 @@ RULES:
       buffer.getChannelData(0).set(float32);
 
       const source = playbackContext.createBufferSource();
+      window._activeAudioSource = source; // Keep a reference
       source.buffer = buffer;
       source.connect(playbackContext.destination);
 
@@ -395,6 +405,10 @@ RULES:
   function clearPlaybackQueue() {
     playbackQueue = [];
     isPlaying = false;
+    if (window._activeAudioSource) {
+      try { window._activeAudioSource.stop(); } catch(e) {}
+      window._activeAudioSource = null;
+    }
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -557,6 +571,10 @@ RULES:
     setTimeout(() => el.error.classList.remove('visible'), 5000);
   }
 
+  function setStatusText(text) {
+    if (el.statusText) el.statusText.textContent = text;
+  }
+
   function updateMicUI() {
     el.micBtn.classList.toggle('on', micOn);
     el.micBtn.classList.toggle('pulse', micOn && assistantState === 'listening');
@@ -583,6 +601,7 @@ RULES:
     transcriptBuffer = '';
     isProcessingAgent = false;
     pendingConfirmation = null;
+    window._interruptedGemini = false;
 
     initParticleBubble();
     if (window._pantherBubbleStart) window._pantherBubbleStart();
@@ -661,13 +680,6 @@ RULES:
       return;
     }
 
-    // Very short utterances (≤3 words) stay in Gemini Live
-    const wordCount = transcript.trim().split(/\s+/).length;
-    if (wordCount <= 3) {
-      console.log('[Panther Live] Short utterance — staying in Gemini Live');
-      return;
-    }
-
     // Don't overlap concurrent agent calls
     if (isProcessingAgent) {
       console.warn('[Panther Live] Agent already processing — ignoring');
@@ -676,6 +688,8 @@ RULES:
 
     // Route to backend AgentOrchestrator
     console.log('[Panther Live] Routing to agent:', transcript.slice(0, 60));
+    // Reset our interruption flag for this new request
+    window._interruptedGemini = false;
     await callVoiceCommandAPI(transcript);
   }
 
@@ -748,7 +762,23 @@ RULES:
             console.log('[Panther Live] Agent session:', data.session_id);
             break;
 
+          case 'ignored':
+            // Backend told us this is just chit-chat, let Gemini Live handle it normally
+            console.log('[Panther Live] Intent is chat, allowing Gemini Live to handle it');
+            return;
+
           case 'progress':
+            // Interrupt Gemini's default response if we are executing a task
+            if (!window._interruptedGemini) {
+                window._interruptedGemini = true;
+                clearPlaybackQueue();
+                if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+                    // Instantly tell Gemini to stop generating its refusal response
+                    geminiWs.send(JSON.stringify({
+                       clientContent: { turns: [{ role: 'user', parts: [{ text: ' ' }] }], turnComplete: true }
+                    }));
+                }
+            }
             setStatusText(data.message);
             break;
 
@@ -791,6 +821,34 @@ RULES:
     if (el.responseText && el.response) {
       el.response.classList.add('visible');
       el.responseText.textContent += text;
+    }
+  }
+
+  /**
+   * Speak a short summary via Gemini TTS
+   */
+  function speakSummary(text) {
+    if (!text) return;
+    console.log('[Panther Live] Speaking summary:', text);
+    
+    // We send the text *as if* the user spoke it, and instruct Gemini to simply repeat it out loud.
+    // This leverages Gemini's high-quality voice pipeline without needing a separate TTS engine.
+    if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+      // Re-enable audio processing since we just interrupted it
+      window._interruptedGemini = false;
+      
+      const payload = {
+        clientContent: {
+          turns: [
+            {
+              role: 'user',
+              parts: [{ text: `System instruction: Please say the following confirmation message using your voice natively. Do not add conversational filler. Message: "${text}"` }]
+            }
+          ]
+        },
+        turnComplete: true
+      };
+      geminiWs.send(JSON.stringify(payload));
     }
   }
 

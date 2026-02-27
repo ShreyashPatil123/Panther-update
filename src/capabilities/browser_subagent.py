@@ -336,7 +336,33 @@ async def _resolve_url_via_llm_chain(
             return f"https://www.{m.group(1)}"
         return None
 
-    # ── Tier 2: Google Gemini (most reliable — key is almost always set) ──
+    # ── Tier 2: Perplexity API (Fastest and most accurate for URLs) ────
+    if pplx_key and pplx_key not in ("your_perplexity_key_here", ""):
+        try:
+            api_url = "https://api.perplexity.ai/chat/completions"
+            headers = {"Authorization": f"Bearer {pplx_key}", "Content-Type": "application/json"}
+            data = {
+                "model": "sonar",
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "max_tokens": 60,
+                "temperature": 0.1
+            }
+            async with aiohttp.ClientSession() as session:
+                async with session.post(api_url, headers=headers, json=data, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                    if resp.status == 200:
+                        result = await resp.json()
+                        content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+                        url = _parse_url_from_response(content)
+                        if url:
+                            logger.info(f"[URL-Resolver] Perplexity resolved: {url}")
+                            return url
+        except Exception as e:
+            logger.warning(f"[URL-Resolver] Perplexity failed: {e}")
+
+    # ── Tier 3: Google Gemini (reliable fallback) ──────────────────────
     if google_model:
         try:
             resp = await asyncio.get_event_loop().run_in_executor(
@@ -349,7 +375,7 @@ async def _resolve_url_via_llm_chain(
         except Exception as e:
             logger.warning(f"[URL-Resolver] Google Gemini failed: {e}")
 
-    # ── Tier 3: NVIDIA API ─────────────────────────────────────────────
+    # ── Tier 4: NVIDIA API ─────────────────────────────────────────────
     if nvidia_key and nvidia_key not in ("your_api_key_here", ""):
         try:
             api_url = "https://integrate.api.nvidia.com/v1/chat/completions"

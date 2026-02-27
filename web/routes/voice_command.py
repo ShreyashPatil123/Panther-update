@@ -99,6 +99,11 @@ async def _stream_voice_response(
         intent = await orchestrator._classify_intent(req.text)
         logger.info(f"Voice intent: {intent} — '{req.text[:60]}'")
 
+        # If it's just a chat, ignore it and let Gemini Live's own voice handle it
+        if intent == "chat":
+            yield _sse("ignored", {"reason": "chat"})
+            return
+
         # ── 3. Confirmation gate for destructive actions ──────────────────
         if _is_destructive(intent, req.text) and not req.confirmed:
             prompt = _build_confirmation_prompt(intent, req.text)
@@ -136,7 +141,7 @@ async def _stream_voice_response(
 
         # ── 6. Generate spoken summary ────────────────────────────────────
         spoken_summary = await _generate_spoken_summary(
-            full_result, intent, orchestrator
+            full_result, intent, orchestrator, original_text=req.text
         )
 
         # ── 7. Emit result + summary + done ───────────────────────────────
@@ -158,7 +163,7 @@ async def _stream_voice_response(
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-DESTRUCTIVE_INTENTS = {"browser_task"}  # Always confirm browser navigation
+DESTRUCTIVE_INTENTS = set()  # Browser tasks no longer need confirmation
 
 
 def _is_destructive(intent: str, text: str) -> bool:
@@ -212,24 +217,45 @@ async def _generate_spoken_summary(
     full_response: str,
     intent: str,
     orchestrator,
+    original_text: str = ""
 ) -> str:
     """
     Summarize the full response into 2-3 TTS-friendly sentences.
-    Short responses are returned as-is.
+    For browser tasks, generate a very short distinct success/failure message
+    in the SAME LANGUAGE as the user's original prompt.
     """
-    if len(full_response) <= 500:
-        return full_response
+    # Specifically intercept browser tasks for a much better voice UX
+    if intent == "browser_task":
+        is_success = "error" not in full_response.lower() and "failed" not in full_response.lower()
+        
+        if is_success:
+            summary_prompt = (
+                f"The user said: '{original_text}'. I just successfully opened the requested website. "
+                f"REPLY ONLY WITH a short, natural confirmation in the EXACT SAME LANGUAGE the user used. "
+                f"Example English: 'Opening YouTube.' Example Hindi: 'YouTube ओपन कर रहा हूँ।' "
+                f"DO NOT add any conversational filler, just the confirmation."
+            )
+        else:
+            summary_prompt = (
+                f"The user said: '{original_text}'. I failed to open the website. "
+                f"REPLY ONLY WITH a short apology in the EXACT SAME LANGUAGE the user used. "
+                f"Example English: 'I couldn't open that website.' Example Hindi: 'मैं वह वेबसाइट ओपन नहीं कर पाया।' "
+            )
+    else:
+        # Standard summary for research/finance/chat
+        if len(full_response) <= 500:
+            return full_response
 
-    summary_prompt = (
-        f"You are a strict summarizer for a voice assistant. Your job is to extract the EXACT FACTUAL ANSWER "
-        f"from the text below and state it directly in 1-2 sentences. \n\n"
-        f"CRITICAL RULES:\n"
-        f"1. NEVER give meta-commentary (do NOT say 'I am locating', 'Based on the text', 'Here is the summary', etc.)\n"
-        f"2. State the actual numbers, facts, or data directly.\n"
-        f"3. Do not use bullet points, markdown, or special characters. Speak naturally.\n\n"
-        f"TEXT TO SUMMARIZE:\n"
-        f"{full_response[:3000]}"
-    )
+        summary_prompt = (
+            f"You are a strict summarizer for a voice assistant. Your job is to extract the EXACT FACTUAL ANSWER "
+            f"from the text below and state it directly in 1-2 sentences. \n\n"
+            f"CRITICAL RULES:\n"
+            f"1. NEVER give meta-commentary (do NOT say 'I am locating', 'Based on the text', 'Here is the summary', etc.)\n"
+            f"2. State the actual numbers, facts, or data directly.\n"
+            f"3. Do not use bullet points, markdown, or special characters. Speak naturally.\n\n"
+            f"TEXT TO SUMMARIZE:\n"
+            f"{full_response[:3000]}"
+        )
 
     try:
         messages = [{"role": "user", "content": summary_prompt}]
