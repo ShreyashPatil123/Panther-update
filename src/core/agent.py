@@ -624,12 +624,6 @@ class AgentOrchestrator:
             "search the web", "search online", "look up online", "open a tab",
             "visit the site", "click on", "take a screenshot", "web search",
             "search google", "search bing",
-            # ── Common site-specific phrases ──
-            "go to youtube", "go to google", "go to github", "go to reddit",
-            "go to twitter", "go to facebook", "go to instagram", "go to linkedin",
-            "go to amazon", "go to flipkart", "go to wikipedia", "go to stackoverflow",
-            "open youtube", "open google", "open github", "open reddit",
-            "open twitter", "open amazon", "open flipkart", "open wikipedia",
             # ── Action-based phrases ──
             "search on youtube", "search on google", "search youtube", "search on",
             "fill the form", "fill out the form", "fill form", "submit the form",
@@ -637,6 +631,22 @@ class AgentOrchestrator:
             "open the website", "open the page", "open the site", "open a website",
             "visit", "go to the",
         ]
+
+        # ── Dynamic SITE_MAP check — covers ALL 40+ known platforms ───────
+        # Import SITE_MAP to avoid maintaining duplicate lists
+        try:
+            from src.capabilities.browser_subagent import SITE_MAP
+            site_names = list(SITE_MAP.keys())
+        except ImportError:
+            site_names = []
+
+        # Check if message matches "open/go to/visit/search on + <known platform>"
+        _nav_verbs = r'\b(?:open|go\s+to|visit|navigate\s+to|search\s+on|search\s+in|search\s+for\s+.+?\s+on|check)\b'
+        for site_name in site_names:
+            if re.search(r'\b' + re.escape(site_name) + r'\b', message_lower):
+                # Found a known platform name — classify as browser task
+                logger.info(f"Intent: SITE_MAP match '{site_name}' → browser_task")
+                return "browser_task"
 
         # ── Regex: detect URLs and "go to <site>" patterns ────────────────
         url_pattern = re.compile(
