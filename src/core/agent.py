@@ -632,19 +632,29 @@ class AgentOrchestrator:
             "visit", "go to the",
         ]
 
+        # ── Universal "open X" detection ──────────────────────────────────
+        # Any command starting with open/go to/visit/navigate to + a target
+        # is ALWAYS a browser task, regardless of what X is.
+        _nav_start = re.match(
+            r'^\s*(?:open|go\s+to|visit|navigate\s+to|launch)\s+(.+)',
+            message, re.IGNORECASE
+        )
+        if _nav_start:
+            target = _nav_start.group(1).strip().lower()
+            # Only classify as browser_task if target is NOT a file operation
+            if not re.search(r'\b(file|folder|directory|document|terminal|cmd|powershell)\b', target):
+                logger.info(f"Intent: Universal 'open X' match → browser_task (target='{target[:50]}')")
+                return "browser_task"
+
         # ── Dynamic SITE_MAP check — covers ALL 40+ known platforms ───────
-        # Import SITE_MAP to avoid maintaining duplicate lists
         try:
             from src.capabilities.browser_subagent import SITE_MAP
             site_names = list(SITE_MAP.keys())
         except ImportError:
             site_names = []
 
-        # Check if message matches "open/go to/visit/search on + <known platform>"
-        _nav_verbs = r'\b(?:open|go\s+to|visit|navigate\s+to|search\s+on|search\s+in|search\s+for\s+.+?\s+on|check)\b'
         for site_name in site_names:
             if re.search(r'\b' + re.escape(site_name) + r'\b', message_lower):
-                # Found a known platform name — classify as browser task
                 logger.info(f"Intent: SITE_MAP match '{site_name}' → browser_task")
                 return "browser_task"
 

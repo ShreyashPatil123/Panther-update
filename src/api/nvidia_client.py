@@ -325,14 +325,11 @@ class NVIDIAClient:
             "meta/llama-3.2-11b-vision-instruct",
             "meta/llama-3.2-90b-vision-instruct",
             "meta/llama-3.3-70b-instruct",
-            "meta/llama-4-maverick-17b-128e-instruct",
             "meta/llama-guard-4-12b",
             "meta/llama3-70b-instruct",
             "meta/llama3-8b-instruct",
             # --- Mistral ---
-            "mistralai/devstral-2-123b-instruct-2512",
             "mistralai/magistral-small-2506",
-            "mistralai/mamba-codestral-7b-v0.1",
             "mistralai/mathstral-7b-v0.1",
             "mistralai/ministral-14b-instruct-2512",
             "mistralai/mistral-7b-instruct-v0.2",
@@ -351,9 +348,6 @@ class NVIDIAClient:
             "google/gemma-3-1b-it",
             "google/gemma-3-4b-it",
             "google/gemma-3-27b-it",
-            "google/gemma-3n-e2b-it",
-            "google/gemma-3n-e4b-it",
-            "google/gemma-7b",
             "google/shieldgemma-9b",
             # --- NVIDIA ---
             "nvidia/llama-3.1-nemoguard-8b-content-safety",
@@ -379,16 +373,11 @@ class NVIDIAClient:
             "deepseek-ai/deepseek-r1-distill-llama-8b",
             "deepseek-ai/deepseek-r1-distill-qwen-14b",
             "deepseek-ai/deepseek-v3.1",
-            "deepseek-ai/deepseek-v3.1-terminus",
             # --- Qwen ---
             "qwen/qwen2-7b-instruct",
             "qwen/qwen2.5-7b-instruct",
             "qwen/qwen2.5-coder-32b-instruct",
             "qwen/qwen2.5-coder-7b-instruct",
-            "qwen/qwen3-235b-a22b",
-            "qwen/qwen3-coder-480b-a35b-instruct",
-            "qwen/qwen3-next-80b-a3b-instruct",
-            "qwen/qwen3-next-80b-a3b-thinking",
             "qwen/qwq-32b",
             # --- Microsoft ---
             "microsoft/phi-3-medium-128k-instruct",
@@ -399,15 +388,7 @@ class NVIDIAClient:
             "microsoft/phi-3-small-8k-instruct",
             "microsoft/phi-3.5-mini-instruct",
             "microsoft/phi-3.5-vision-instruct",
-            "microsoft/phi-4-mini-flash-reasoning",
-            "microsoft/phi-4-multimodal-instruct",
-            # --- Moonshot ---
-            "moonshotai/kimi-k2-instruct-0905",
-            # --- OpenAI (open-source) ---
-            "openai/gpt-oss-20b",
-            "openai/gpt-oss-120b",
             # --- MiniMax ---
-            "minimaxai/minimax-m2",
             "minimaxai/minimax-m2.1",
             # --- AI21 Labs ---
             "ai21labs/jamba-1.5-mini-instruct",
@@ -416,12 +397,8 @@ class NVIDIAClient:
             # --- IBM ---
             "ibm/granite-3.3-8b-instruct",
             "ibm/granite-guardian-3.0-8b",
-            # --- Stepfun ---
-            "stepfun-ai/step-3.5-flash",
             # --- Z-AI (Zhipu) ---
             "z-ai/glm4.7",
-            # --- ByteDance ---
-            "bytedance/seed-oss-36b-instruct",
             # --- Tiiuae ---
             "tiiuae/falcon3-7b-instruct",
             # --- Upstage ---
@@ -442,16 +419,6 @@ class NVIDIAClient:
             # --- Speakleash ---
             "speakleash/bielik-11b-v2.3-instruct",
             "speakleash/bielik-11b-v2.6-instruct",
-            # --- Other ---
-            "gotocompany/gemma-2-9b-cpt-sahabatai-instruct",
-            "institute-of-science-tokyo/llama-3.1-swallow-70b-instruct-v0.1",
-            "institute-of-science-tokyo/llama-3.1-swallow-8b-instruct-v0.1",
-            "marin/marin-8b-instruct",
-            "mediatek/breeze-7b-instruct",
-            "opengpt-x/teuken-7b-instruct-commercial-v0.4",
-            "tokyotech-llm/llama-3-swallow-70b-instruct-v0.1",
-            "utter-project/eurollm-9b-instruct",
-            "yentinglin/llama-3-taiwan-70b-instruct",
         ]
 
     async def close(self):

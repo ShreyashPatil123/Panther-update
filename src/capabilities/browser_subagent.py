@@ -164,41 +164,170 @@ def _extract_url(task: str) -> Optional[str]:
     return None
 
 
+def _extract_brand_name(task: str) -> Optional[str]:
+    """Extract the brand/website name from a navigation command."""
+    # Remove common action words to isolate the brand name
+    patterns = [
+        r"(?:open|go\s+to|visit|navigate\s+to|launch|check|show\s+me)\s+(?:the\s+)?(?:official\s+)?(?:website\s+(?:of|for)\s+)?(.+?)(?:'s\s+website|'s\s+site|'s\s+page|\s+website|\s+site|\s+page|\s+app)?(?:\s+and\s+.+)?$",
+        r"(?:open|go\s+to|visit|navigate\s+to|launch|check)\s+(.+?)$",
+    ]
+    for p in patterns:
+        m = re.search(p, task, re.IGNORECASE)
+        if m:
+            brand = m.group(1).strip().rstrip('.')
+            # Strip trailing possessive 's
+            brand = re.sub(r"'s$", "", brand).strip()
+            # Skip empty
+            if not brand:
+                continue
+            # Allow up to 5 words for multi-word brands (e.g., "pimpri chinchwad university")
+            if len(brand.split()) > 5:
+                continue
+            # Skip if it contains search-related words
+            if re.search(r'\b(search|find|look\s+up|how|what|why|when)\b', brand, re.IGNORECASE):
+                continue
+            return brand
+    return None
+
+
+async def _try_domain_heuristic(brand: str) -> Optional[str]:
+    """Try common domain patterns for a brand name via concurrent HTTP HEAD requests."""
+    # Clean brand name — strip possessive, special chars
+    clean = re.sub(r"'s$", "", brand.strip(), flags=re.IGNORECASE)
+    slug = re.sub(r'[^a-zA-Z0-9]', '', clean.lower())
+    slug_hyphen = re.sub(r'\s+', '-', clean.lower().strip())
+    slug_hyphen = re.sub(r'[^a-zA-Z0-9-]', '', slug_hyphen)
+
+    if not slug or len(slug) < 2:
+        return None
+
+    # Build candidate list
+    candidates = [
+        f"https://www.{slug}.com",
+        f"https://{slug}.com",
+    ]
+
+    # Multi-word: hyphenated version
+    if slug != slug_hyphen and '-' in slug_hyphen:
+        candidates.extend([
+            f"https://www.{slug_hyphen}.com",
+            f"https://{slug_hyphen}.com",
+        ])
+
+    # Educational institutions
+    is_edu = bool(re.search(r'\b(university|college|institute|school|academy)\b', brand, re.IGNORECASE))
+    if is_edu:
+        candidates.extend([
+            f"https://www.{slug}.ac.in",
+            f"https://{slug}.ac.in",
+            f"https://www.{slug}.edu",
+            f"https://{slug}.edu",
+            f"https://www.{slug}.edu.in",
+        ])
+        if slug != slug_hyphen and '-' in slug_hyphen:
+            candidates.extend([
+                f"https://www.{slug_hyphen}.ac.in",
+                f"https://{slug_hyphen}.edu",
+            ])
+
+    # Alternative TLDs
+    candidates.extend([
+        f"https://www.{slug}.in",
+        f"https://www.{slug}.org",
+        f"https://www.{slug}.io",
+        f"https://{slug}.co",
+        f"https://www.{slug}.ai",
+        f"https://{slug}.app",
+        f"https://{slug}.dev",
+        f"https://www.{slug}.net",
+    ])
+
+    # ── Concurrent probing — try all at once, return first success ──
+    async def _probe(session: aiohttp.ClientSession, url: str) -> Optional[str]:
+        try:
+            async with session.head(
+                url,
+                timeout=aiohttp.ClientTimeout(total=3),
+                allow_redirects=True,
+                ssl=False,
+            ) as resp:
+                if resp.status < 400:
+                    logger.info(f"[URL-Heuristic] '{brand}' -> {url} (status={resp.status})")
+                    return url
+        except Exception:
+            pass
+        return None
+
+    async with aiohttp.ClientSession() as session:
+        tasks = [_probe(session, url) for url in candidates]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for r in results:
+            if isinstance(r, str) and r:
+                return r
+    return None
+
+
 async def _resolve_url_via_llm_chain(
     task: str, nvidia_key: Optional[str], google_model, pplx_key: Optional[str]
 ) -> Optional[str]:
     """
-    Intelligently resolve the canonical domain from natural language using a fallback chain:
-    1. NVIDIA (Primary)
-    2. Google Gemini (Fallback)
-    3. Perplexity (Final Fallback)
+    Intelligently resolve the canonical domain from natural language.
+    Robust fallback chain that works even without NVIDIA/Perplexity keys:
+    1. Brand-to-domain heuristic (try {name}.com — zero API cost)  
+    2. Gemini (reliable, usually has Google key)
+    3. NVIDIA (if key available)
+    4. Perplexity (if key available)  
     """
-    system_prompt = (
-        "You are an expert at identifying official brand websites. Respond ONLY with valid JSON: "
-        "{\"domain\": \"exact-root-domain.com\"}. If the user mentions a specific platform to search "
-        "on (e.g., 'youtube', 'netflix', 'amazon', 'reddit'), return THAT platform's exact root domain, "
-        "ignoring what they want to search for. Do not include www, paths, or explanations."
-    )
-    user_prompt = f"Extract the canonical website domain the user intends to visit for: {task}"
 
-    def _parse_domain(content: str) -> Optional[str]:
-        match = re.search(r'\{.*\}', content, re.DOTALL)
-        if match:
-            try:
-                parsed = json.loads(match.group())
-                domain = parsed.get("domain", "").strip()
-                if domain:
-                    if not domain.startswith("http"):
-                        return f"https://www.{domain.replace('www.', '')}"
-                    return domain
-            except:
-                pass
+    # ── Tier 1: Brand-to-domain heuristic ──────────────────────────────
+    brand = _extract_brand_name(task)
+    if brand:
+        logger.info(f"[URL-Resolver] Trying domain heuristic for brand: '{brand}'")
+        heuristic_url = await _try_domain_heuristic(brand)
+        if heuristic_url:
+            logger.info(f"[URL-Resolver] Heuristic resolved: '{brand}' -> {heuristic_url}")
+            return heuristic_url
+
+    # ── Common LLM prompt ──────────────────────────────────────────────
+    system_prompt = (
+        "You are a URL resolver. Given a user command, return ONLY the official website URL. "
+        "Respond with just the URL, nothing else. Example: https://www.zara.com"
+    )
+    user_prompt = f"What is the official website URL for this command: {task}"
+
+    def _parse_url_from_response(content: str) -> Optional[str]:
+        """Extract a valid URL from an LLM response, even if it's messy."""
+        if not content:
+            return None
+        content = content.strip()
+        # Try to find a URL in the response
+        m = re.search(r'https?://[^\s,\'"<>\]\)]+', content)
+        if m:
+            url = m.group(0).rstrip('.')
+            return url
+        # Try bare domain pattern
+        m = re.search(r'\b([a-zA-Z0-9][-a-zA-Z0-9]*\.(?:com|org|net|io|co|ai|dev|app|me|in|edu|gov|tech|tv))\b', content)
+        if m:
+            return f"https://www.{m.group(1)}"
         return None
 
-    # --- 1. NVIDIA API ---
-    if nvidia_key and nvidia_key != "your_api_key_here":
+    # ── Tier 2: Google Gemini (most reliable — key is almost always set) ──
+    if google_model:
         try:
-            url = "https://integrate.api.nvidia.com/v1/chat/completions"
+            resp = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: google_model.generate_content(f"{system_prompt}\n\n{user_prompt}")
+            )
+            url = _parse_url_from_response(resp.text)
+            if url:
+                logger.info(f"[URL-Resolver] Gemini resolved: {url}")
+                return url
+        except Exception as e:
+            logger.warning(f"[URL-Resolver] Google Gemini failed: {e}")
+
+    # ── Tier 3: NVIDIA API ─────────────────────────────────────────────
+    if nvidia_key and nvidia_key not in ("your_api_key_here", ""):
+        try:
+            api_url = "https://integrate.api.nvidia.com/v1/chat/completions"
             headers = {"Authorization": f"Bearer {nvidia_key}", "Content-Type": "application/json"}
             data = {
                 "model": "meta/llama-3.1-8b-instruct",
@@ -206,38 +335,25 @@ async def _resolve_url_via_llm_chain(
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                "max_tokens": 50,
+                "max_tokens": 60,
                 "temperature": 0.1
             }
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=data, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                async with session.post(api_url, headers=headers, json=data, timeout=aiohttp.ClientTimeout(total=8)) as resp:
                     if resp.status == 200:
                         result = await resp.json()
                         content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-                        domain = _parse_domain(content)
-                        if domain:
-                            logger.info(f"[URL-Resolver] NVIDIA successfully resolved: {domain}")
-                            return domain
+                        url = _parse_url_from_response(content)
+                        if url:
+                            logger.info(f"[URL-Resolver] NVIDIA resolved: {url}")
+                            return url
         except Exception as e:
             logger.warning(f"[URL-Resolver] NVIDIA failed: {e}")
 
-    # --- 2. Google Gemini API ---
-    if google_model:
+    # ── Tier 4: Perplexity API ─────────────────────────────────────────
+    if pplx_key and pplx_key not in ("your_perplexity_key_here", ""):
         try:
-            resp = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: google_model.generate_content(f"{system_prompt}\n\n{user_prompt}")
-            )
-            domain = _parse_domain(resp.text)
-            if domain:
-                logger.info(f"[URL-Resolver] Gemini successfully resolved: {domain}")
-                return domain
-        except Exception as e:
-            logger.warning(f"[URL-Resolver] Google Gemini failed: {e}")
-
-    # --- 3. Perplexity API ---
-    if pplx_key and pplx_key != "your_perplexity_key_here":
-        try:
-            url = "https://api.perplexity.ai/chat/completions"
+            api_url = "https://api.perplexity.ai/chat/completions"
             headers = {"Authorization": f"Bearer {pplx_key}", "Content-Type": "application/json"}
             data = {
                 "model": "sonar",
@@ -245,20 +361,74 @@ async def _resolve_url_via_llm_chain(
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                "max_tokens": 50,
+                "max_tokens": 60,
                 "temperature": 0.1
             }
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=data, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                async with session.post(api_url, headers=headers, json=data, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     if resp.status == 200:
                         result = await resp.json()
                         content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-                        domain = _parse_domain(content)
-                        if domain:
-                            logger.info(f"[URL-Resolver] Perplexity successfully resolved: {domain}")
-                            return domain
+                        url = _parse_url_from_response(content)
+                        if url:
+                            logger.info(f"[URL-Resolver] Perplexity resolved: {url}")
+                            return url
         except Exception as e:
             logger.warning(f"[URL-Resolver] Perplexity failed: {e}")
+
+    # ── Tier 5: DuckDuckGo Instant Answer API (free, no key needed) ────
+    # Returns OfficialWebsite/AbstractURL for known brands and orgs.
+    brand = _extract_brand_name(task)
+    if brand:
+        try:
+            import urllib.parse
+            ddg_url = f"https://api.duckduckgo.com/?q={urllib.parse.quote_plus(brand)}&format=json&no_redirect=1&skip_disambig=1"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(ddg_url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json(content_type=None)
+                        # Priority: OfficialWebsite > AbstractURL > Redirect
+                        official = data.get("OfficialWebsite") or data.get("AbstractURL") or data.get("Redirect")
+                        if official and official.startswith("http"):
+                            logger.info(f"[URL-Resolver] DuckDuckGo resolved: '{brand}' -> {official}")
+                            return official
+                        # Check related topics for a URL
+                        for topic in data.get("RelatedTopics", []):
+                            first_url = topic.get("FirstURL", "")
+                            if first_url and not "duckduckgo.com" in first_url:
+                                logger.info(f"[URL-Resolver] DuckDuckGo topic URL: '{brand}' -> {first_url}")
+                                return first_url
+        except Exception as e:
+            logger.warning(f"[URL-Resolver] DuckDuckGo failed: {e}")
+
+    # ── Tier 6: Google I'm Feeling Lucky redirect ──────────────────────
+    # Follows redirects to land on the actual website, not the search page.
+    if brand:
+        try:
+            import urllib.parse
+            lucky_url = f"https://www.google.com/search?btnI&q={urllib.parse.quote_plus(brand + ' official website')}"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    lucky_url,
+                    timeout=aiohttp.ClientTimeout(total=6),
+                    allow_redirects=True,
+                    ssl=False,
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+                ) as resp:
+                    final_url = str(resp.url)
+                    # Only use if it redirected away from Google
+                    if "google.com/search" not in final_url and final_url.startswith("http"):
+                        logger.info(f"[URL-Resolver] Google Lucky resolved: '{brand}' -> {final_url}")
+                        return final_url
+        except Exception as e:
+            logger.warning(f"[URL-Resolver] Google Lucky failed: {e}")
+
+    # ── Absolute fallback: Google search (last resort) ─────────────────
+    if brand:
+        import urllib.parse
+        google_url = f"https://www.google.com/search?q={urllib.parse.quote_plus(brand + ' official website')}"
+        logger.info(f"[URL-Resolver] Absolute fallback: Google search: {google_url}")
+        return google_url
 
     return None
 
@@ -364,8 +534,10 @@ class BrowserSubAgent:
         # ── Google fallback: if still on about:blank, search Google ──────
         current = self.page.url
         if not current or current in ("about:blank", ""):
-            google_query = query or task
-            yield {"type": "action", "message": f"🔍 No target URL found, searching Google: {google_query}"}
+            # Use clean brand name for a better search query
+            brand = _extract_brand_name(task)
+            google_query = brand + " official website" if brand else (query or task)
+            yield {"type": "action", "message": f"🔍 Searching Google: {google_query}"}
             try:
                 import urllib.parse
                 google_url = f"https://www.google.com/search?q={urllib.parse.quote_plus(google_query)}"
@@ -782,98 +954,25 @@ class BrowserSubAgent:
         if not url.startswith("http"):
             url = "https://" + url
 
-        import time
-        import ctypes
+        logger.info(f"[SubAgent] Navigating to: {url}")
 
-        def _type_url(target_url: str, title_substring: str):
-            VK_CONTROL = 0x11
-            VK_L = 0x4C
-            VK_RETURN = 0x0D
-            KEYEVENTF_KEYUP = 0x0002
-            VK_MENU = 0x12 # Alt key
-
-            # 1. Force Focus Steal via Alt-Key Bypass
-            EnumWindows = ctypes.windll.user32.EnumWindows
-            EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int))
-            GetWindowText = ctypes.windll.user32.GetWindowTextW
-            GetWindowTextLength = ctypes.windll.user32.GetWindowTextLengthW
-            IsWindowVisible = ctypes.windll.user32.IsWindowVisible
-
-            hwnds = []
-            def foreach_window(hwnd, lParam):
-                if IsWindowVisible(hwnd):
-                    length = GetWindowTextLength(hwnd)
-                    buff = ctypes.create_unicode_buffer(length + 1)
-                    GetWindowText(hwnd, buff, length + 1)
-                    if title_substring in buff.value:
-                        hwnds.append(hwnd)
-                return True
-            
-            EnumWindows(EnumWindowsProc(foreach_window), 0)
-            if hwnds:
-                hwnd = hwnds[0]
-                # Simulate pressing Alt to bypass ForegroundLockTimeout
-                ctypes.windll.user32.keybd_event(VK_MENU, 0, 0, 0)
-                ctypes.windll.user32.SetForegroundWindow(hwnd)
-                ctypes.windll.user32.ShowWindow(hwnd, 9) # SW_RESTORE
-                ctypes.windll.user32.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0)
-                time.sleep(0.3) # Wait for window to rise
-
-            # 2. Press Ctrl+L
-            ctypes.windll.user32.keybd_event(VK_CONTROL, 0, 0, 0)
-            ctypes.windll.user32.keybd_event(VK_L, 0, 0, 0)
-            time.sleep(0.05)
-            ctypes.windll.user32.keybd_event(VK_L, 0, KEYEVENTF_KEYUP, 0)
-            ctypes.windll.user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
-            time.sleep(0.2)
-            
-            # 3. Type URL
-            for char in target_url:
-                vk = ctypes.windll.user32.VkKeyScanW(ord(char))
-                shift = (vk & 0x0100) != 0
-                vk_code = vk & 0xFF
-                
-                if shift:
-                    ctypes.windll.user32.keybd_event(0x10, 0, 0, 0)
-                ctypes.windll.user32.keybd_event(vk_code, 0, 0, 0)
-                time.sleep(0.01)
-                ctypes.windll.user32.keybd_event(vk_code, 0, KEYEVENTF_KEYUP, 0)
-                if shift:
-                    ctypes.windll.user32.keybd_event(0x10, 0, KEYEVENTF_KEYUP, 0)
-                time.sleep(0.02)
-                
-            # 4. Press Enter
-            time.sleep(0.1)
-            ctypes.windll.user32.keybd_event(VK_RETURN, 0, 0, 0)
-            time.sleep(0.05)
-            ctypes.windll.user32.keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, 0)
-
-        # Bring window to front before typing
         try:
-            await self.page.bring_to_front()
-            
-            # Inject a unique title to find the EXACT window to focus
-            unique_title = f"PANTHER_TARGET_{int(time.time()*1000)}"
-            try:
-                await self.page.evaluate(f'document.title = "{unique_title}"')
-            except Exception:
-                pass
-            
-            await asyncio.sleep(0.8) # Wait for title to update in OS compositor
-            
-            # Run typing animation in a thread with focus stealing
-            await asyncio.to_thread(_type_url, url, unique_title)
-            
-            # Since enter might trigger navigation, we wait for it
-            await self.page.wait_for_load_state("load", timeout=8000)
-        except Exception as e:
-            logger.warning(f"Typing animation failed: {e}. Falling back to standard navigation.")
+            # Use Playwright's reliable page.goto() for navigation
             await self.page.goto(url, wait_until="domcontentloaded", timeout=15000)
+        except Exception as e:
+            logger.warning(f"[SubAgent] page.goto failed: {e}, retrying with longer timeout")
             try:
-                await self.page.wait_for_load_state("load", timeout=8000)
-            except Exception:
-                pass
-                
+                await self.page.goto(url, wait_until="commit", timeout=20000)
+            except Exception as e2:
+                logger.error(f"[SubAgent] Navigation failed completely: {e2}")
+                raise
+
+        # Wait for the page to fully settle
+        try:
+            await self.page.wait_for_load_state("load", timeout=8000)
+        except Exception:
+            pass  # Some pages never fully "load" (streaming, infinite scroll)
+
         await asyncio.sleep(0.5)
 
     async def _screenshot(self) -> str:
