@@ -60,6 +60,8 @@ def _launch_browser_with_cdp(url: str) -> subprocess.Popen | None:
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-background-networking",
+        "--remote-allow-origins=*",
+        "--remote-debugging-address=127.0.0.1",
         url,
     ]
     try:
@@ -130,7 +132,7 @@ async def main():
 
         asyncio.create_task(_open_browser())
 
-        logger.info(f"PANTHER web UI → http://{host}:{port}")
+        logger.info(f"PANTHER web UI -> http://{host}:{port}")
 
         config_uv = uvicorn.Config(
             app,

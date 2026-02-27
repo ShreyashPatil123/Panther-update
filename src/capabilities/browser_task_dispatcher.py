@@ -194,14 +194,23 @@ class TaskDispatcher:
 
         # ── Try connecting to existing browser via CDP ────────────────────
         try:
+            # Increased timeout to 15000 as Perplexity recommends waiting for OS port bind
             self._browser = await self._playwright.chromium.connect_over_cdp(
-                self.cdp_url, timeout=5000
+                self.cdp_url, timeout=15000
             )
-            # Use the browser's default context (the user's existing tabs)
+            
+            # Perplexity fix: Must use the EXISTING default context.
+            # Calling new_context() over CDP spawns a new window!
             contexts = self._browser.contexts
+            if not contexts:
+                # Wait briefly for browser to finish initiating contexts
+                await asyncio.sleep(2)
+                contexts = self._browser.contexts
+                
             if contexts:
                 self._context = contexts[0]
             else:
+                logger.warning("[TaskDispatcher] No existing contexts found via CDP. Forcing new context.")
                 self._context = await self._browser.new_context()
 
             # The actual new tab will be created when a task is dispatched
@@ -256,6 +265,9 @@ class TaskDispatcher:
 
         yield {"type": "plan", "message": f"🌐 Starting browser task: {task}"}
 
+        # Add requested delay before opening the new tab
+        await asyncio.sleep(2.0)
+
         # Always create a fresh tab for each new task
         try:
             new_page = await _pw_thread.run_coroutine_async(
@@ -309,6 +321,11 @@ class TaskDispatcher:
         """Create a new tab in the browser context."""
         if self._context:
             page = await self._context.new_page()
+            await page.bring_to_front()
+            try:
+                await page.evaluate("window.focus()")
+            except Exception:
+                pass
             return page
         return None
 

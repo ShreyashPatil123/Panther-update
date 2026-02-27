@@ -152,59 +152,115 @@ def _extract_url(task: str) -> Optional[str]:
     if m:
         return "https://" + m.group(1)
 
+    # 3. SITE_MAP instant lookup — check if any known platform name appears in the task
     task_lower = task.lower()
+    for name, site_url in SITE_MAP.items():
+        # Match the site name as a whole word to avoid false positives
+        if re.search(r'\b' + re.escape(name) + r'\b', task_lower):
+            logger.info(f"[URL-Extractor] SITE_MAP instant match: '{name}' -> {site_url}")
+            return site_url
 
-    # 3. Fallback to None if not explicitly a URL structure. We will resolve via Perplexity if needed.
+    # 4. Fallback to None — will be resolved via LLM chain if needed.
     return None
 
-async def _resolve_url_via_perplexity(task: str, api_key: str) -> Optional[str]:
-    """Use Perplexity API to intelligently resolve the official website domain from natural language."""
-    if not api_key:
+
+async def _resolve_url_via_llm_chain(
+    task: str, nvidia_key: Optional[str], google_model, pplx_key: Optional[str]
+) -> Optional[str]:
+    """
+    Intelligently resolve the canonical domain from natural language using a fallback chain:
+    1. NVIDIA (Primary)
+    2. Google Gemini (Fallback)
+    3. Perplexity (Final Fallback)
+    """
+    system_prompt = (
+        "You are an expert at identifying official brand websites. Respond ONLY with valid JSON: "
+        "{\"domain\": \"exact-root-domain.com\"}. If the user mentions a specific platform to search "
+        "on (e.g., 'youtube', 'netflix', 'amazon', 'reddit'), return THAT platform's exact root domain, "
+        "ignoring what they want to search for. Do not include www, paths, or explanations."
+    )
+    user_prompt = f"Extract the canonical website domain the user intends to visit for: {task}"
+
+    def _parse_domain(content: str) -> Optional[str]:
+        match = re.search(r'\{.*\}', content, re.DOTALL)
+        if match:
+            try:
+                parsed = json.loads(match.group())
+                domain = parsed.get("domain", "").strip()
+                if domain:
+                    if not domain.startswith("http"):
+                        return f"https://www.{domain.replace('www.', '')}"
+                    return domain
+            except:
+                pass
         return None
-        
-    url = "https://api.perplexity.ai/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    data = {
-        "model": "sonar",
-        "messages": [
-            {
-                "role": "system",
-                "content": "You are an expert at identifying official brand websites. Respond ONLY with valid JSON: {\"domain\": \"exact-root-domain.com\"}. Use web knowledge to find the canonical official site. Do not include www, paths, or explanations."
-            },
-            {
-                "role": "user",
-                "content": f"Extract the official website domain for: {task}"
-            }
-        ],
-        "max_tokens": 50,
-        "temperature": 0.1
-    }
-    
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=data, timeout=10) as resp:
-                if resp.status == 200:
-                    result = await resp.json()
-                    content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                    match = re.search(r'\{.*\}', content, re.DOTALL)
-                    if match:
-                        try:
-                            parsed = json.loads(match.group())
-                            domain = parsed.get("domain")
-                            if domain:
-                                if not domain.startswith("http"):
-                                    return f"https://www.{domain.replace('www.', '')}"
-                                return domain
-                        except json.JSONDecodeError:
-                            pass
-    except Exception as e:
-        logger.error(f"[SubAgent] Perplexity URL resolution failed: {e}")
-        
-    return None
 
+    # --- 1. NVIDIA API ---
+    if nvidia_key and nvidia_key != "your_api_key_here":
+        try:
+            url = "https://integrate.api.nvidia.com/v1/chat/completions"
+            headers = {"Authorization": f"Bearer {nvidia_key}", "Content-Type": "application/json"}
+            data = {
+                "model": "meta/llama-3.1-8b-instruct",
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "max_tokens": 50,
+                "temperature": 0.1
+            }
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=data, timeout=aiohttp.ClientTimeout(total=8)) as resp:
+                    if resp.status == 200:
+                        result = await resp.json()
+                        content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+                        domain = _parse_domain(content)
+                        if domain:
+                            logger.info(f"[URL-Resolver] NVIDIA successfully resolved: {domain}")
+                            return domain
+        except Exception as e:
+            logger.warning(f"[URL-Resolver] NVIDIA failed: {e}")
+
+    # --- 2. Google Gemini API ---
+    if google_model:
+        try:
+            resp = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: google_model.generate_content(f"{system_prompt}\n\n{user_prompt}")
+            )
+            domain = _parse_domain(resp.text)
+            if domain:
+                logger.info(f"[URL-Resolver] Gemini successfully resolved: {domain}")
+                return domain
+        except Exception as e:
+            logger.warning(f"[URL-Resolver] Google Gemini failed: {e}")
+
+    # --- 3. Perplexity API ---
+    if pplx_key and pplx_key != "your_perplexity_key_here":
+        try:
+            url = "https://api.perplexity.ai/chat/completions"
+            headers = {"Authorization": f"Bearer {pplx_key}", "Content-Type": "application/json"}
+            data = {
+                "model": "sonar",
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "max_tokens": 50,
+                "temperature": 0.1
+            }
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=data, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        result = await resp.json()
+                        content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+                        domain = _parse_domain(content)
+                        if domain:
+                            logger.info(f"[URL-Resolver] Perplexity successfully resolved: {domain}")
+                            return domain
+        except Exception as e:
+            logger.warning(f"[URL-Resolver] Perplexity failed: {e}")
+
+    return None
 
 
 def _extract_search_query(task: str) -> Optional[str]:
@@ -219,9 +275,9 @@ def _extract_search_query(task: str) -> Optional[str]:
         m = re.search(p, task, re.IGNORECASE)
         if m:
             q = m.group(1).strip()
-            for name in SITE_MAP:
-                pass # removed aggressive stripping
-
+            # Strip trailing platform references and filler phrases
+            q = re.sub(r'\s+(?:on|in|at)\s+\S+.*$', '', q, flags=re.IGNORECASE)
+            q = re.sub(r'\s+and\s+(?:open|play|watch|show|view)\s+it\s*$', '', q, flags=re.IGNORECASE)
             q = re.sub(r'\s+', ' ', q).strip().rstrip('.')
             if q and len(q) > 1:
                 return q
@@ -270,12 +326,20 @@ class BrowserSubAgent:
         url = _extract_url(task)
         query = _extract_search_query(task)
         
-        # If no explicit URL is found but the user wants to go to an official website or we have a query, ask Perplexity
-        if not url and (re.search(r'\b(website|site|page)\b', task.lower()) or " on " in task.lower()):
-            yield {"type": "action", "message": f"🌐 Resolving official website using Perplexity..."}
-            # Look for perplexity key
+        # If no explicit URL is found but the user wants to go to an official website or we have a query, run the LLM fallback chain
+        if not url and (re.search(r'\b(website|site|page|open|go\s+to|visit)\b', task.lower()) or " on " in task.lower()):
+            yield {"type": "action", "message": f"🌐 Resolving official website..."}
+            
+            nvidia_key = os.getenv("NVIDIA_API_KEY")
             pplx_key = os.getenv("PERPLEXITY_API_KEY")
-            resolved_url = await _resolve_url_via_perplexity(task, pplx_key)
+            
+            resolved_url = await _resolve_url_via_llm_chain(
+                task=task,
+                nvidia_key=nvidia_key,
+                google_model=self.model,
+                pplx_key=pplx_key
+            )
+            
             if resolved_url:
                 url = resolved_url
                 yield {"type": "action", "message": f"✨ Resolved to: {url}"}
@@ -289,9 +353,8 @@ class BrowserSubAgent:
                 yield {"type": "error", "message": f"Navigation failed: {e}"}
                 return
 
-        # ── Quick search attempt ─────────────────────────────────────────
+        # ── Search within the loaded page (if query was extracted) ─────────
         if query:
-
             yield {"type": "action", "message": f"🔍 Searching: {query}"}
             searched = await self._universal_search(query)
             if searched:
@@ -579,7 +642,19 @@ class BrowserSubAgent:
     # ── Universal search ─────────────────────────────────────────────────────
 
     async def _universal_search(self, query: str) -> bool:
-        """Find and use search input on ANY website."""
+        """Find and use search input on ANY website with typing animation."""
+        import time
+        import ctypes
+
+        # ── Phase 1: Wait for the page to be interactive ──────────────────
+        try:
+            await self.page.wait_for_load_state("domcontentloaded", timeout=10000)
+        except Exception:
+            pass
+        # Extra grace period for JS-heavy sites (YouTube, Amazon, etc.)
+        await asyncio.sleep(2.0)
+
+        # ── Phase 2: Find the search input ────────────────────────────────
         strategies = [
             lambda: self.page.get_by_role("searchbox").first,
             lambda: self.page.get_by_placeholder(re.compile(r"search", re.IGNORECASE)).first,
@@ -599,36 +674,185 @@ class BrowserSubAgent:
             lambda: self.page.locator('input[placeholder*="query" i]').first,
         ]
 
+        target_el = None
         for get_el in strategies:
             try:
                 el = get_el()
-                if await el.is_visible(timeout=800):
-                    await el.click(timeout=2000)
-                    await asyncio.sleep(0.2)
-                    await el.fill("")
-                    await el.fill(query)
-                    await asyncio.sleep(0.3)
-                    await self.page.keyboard.press("Enter")
-                    try:
-                        await self.page.wait_for_load_state("networkidle", timeout=5000)
-                    except Exception:
-                        await asyncio.sleep(1.5)
-                    return True
+                if await el.is_visible(timeout=1500):
+                    target_el = el
+                    break
             except Exception:
                 continue
 
-        return False
+        if not target_el:
+            logger.warning("[SubAgent] No search input found on page")
+            return False
+
+        # ── Phase 3: Click the search input to focus it ───────────────────
+        try:
+            await target_el.click(timeout=3000)
+            await asyncio.sleep(0.5)
+            # Clear any existing content
+            await target_el.fill("")
+            await asyncio.sleep(0.3)
+        except Exception as e:
+            logger.warning(f"[SubAgent] Could not click search input: {e}")
+            return False
+
+        # ── Phase 4: Type the query character-by-character via ctypes ─────
+        def _type_search_query(text: str):
+            """Simulate human-like typing using Windows ctypes keyboard events."""
+            KEYEVENTF_KEYUP = 0x0002
+            VK_RETURN = 0x0D
+
+            for char in text:
+                vk = ctypes.windll.user32.VkKeyScanW(ord(char))
+                shift = (vk & 0x0100) != 0
+                vk_code = vk & 0xFF
+
+                if shift:
+                    ctypes.windll.user32.keybd_event(0x10, 0, 0, 0)  # Shift down
+                ctypes.windll.user32.keybd_event(vk_code, 0, 0, 0)
+                time.sleep(0.02)
+                ctypes.windll.user32.keybd_event(vk_code, 0, KEYEVENTF_KEYUP, 0)
+                if shift:
+                    ctypes.windll.user32.keybd_event(0x10, 0, KEYEVENTF_KEYUP, 0)
+                time.sleep(0.04)  # Slightly slower than URL typing for a natural feel
+
+            # Press Enter
+            time.sleep(0.15)
+            ctypes.windll.user32.keybd_event(VK_RETURN, 0, 0, 0)
+            time.sleep(0.05)
+            ctypes.windll.user32.keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, 0)
+
+        try:
+            # Ensure the browser window is focused
+            await self.page.bring_to_front()
+            await asyncio.sleep(0.3)
+
+            # Run the typing animation in a thread (ctypes is blocking)
+            await asyncio.to_thread(_type_search_query, query)
+
+            # Wait for search results to load
+            try:
+                await self.page.wait_for_load_state("domcontentloaded", timeout=8000)
+            except Exception:
+                await asyncio.sleep(2.0)
+
+            return True
+        except Exception as e:
+            logger.warning(f"[SubAgent] Typing animation failed, falling back to fill: {e}")
+            # Fallback: use Playwright fill if ctypes fails
+            try:
+                await target_el.fill(query)
+                await asyncio.sleep(0.3)
+                await self.page.keyboard.press("Enter")
+                try:
+                    await self.page.wait_for_load_state("domcontentloaded", timeout=8000)
+                except Exception:
+                    await asyncio.sleep(2.0)
+                return True
+            except Exception:
+                return False
 
     # ── Core helpers ─────────────────────────────────────────────────────────
 
     async def _navigate(self, url: str):
         if not url.startswith("http"):
             url = "https://" + url
-        await self.page.goto(url, wait_until="domcontentloaded", timeout=15000)
+
+        import time
+        import ctypes
+
+        def _type_url(target_url: str, title_substring: str):
+            VK_CONTROL = 0x11
+            VK_L = 0x4C
+            VK_RETURN = 0x0D
+            KEYEVENTF_KEYUP = 0x0002
+            VK_MENU = 0x12 # Alt key
+
+            # 1. Force Focus Steal via Alt-Key Bypass
+            EnumWindows = ctypes.windll.user32.EnumWindows
+            EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int))
+            GetWindowText = ctypes.windll.user32.GetWindowTextW
+            GetWindowTextLength = ctypes.windll.user32.GetWindowTextLengthW
+            IsWindowVisible = ctypes.windll.user32.IsWindowVisible
+
+            hwnds = []
+            def foreach_window(hwnd, lParam):
+                if IsWindowVisible(hwnd):
+                    length = GetWindowTextLength(hwnd)
+                    buff = ctypes.create_unicode_buffer(length + 1)
+                    GetWindowText(hwnd, buff, length + 1)
+                    if title_substring in buff.value:
+                        hwnds.append(hwnd)
+                return True
+            
+            EnumWindows(EnumWindowsProc(foreach_window), 0)
+            if hwnds:
+                hwnd = hwnds[0]
+                # Simulate pressing Alt to bypass ForegroundLockTimeout
+                ctypes.windll.user32.keybd_event(VK_MENU, 0, 0, 0)
+                ctypes.windll.user32.SetForegroundWindow(hwnd)
+                ctypes.windll.user32.ShowWindow(hwnd, 9) # SW_RESTORE
+                ctypes.windll.user32.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0)
+                time.sleep(0.3) # Wait for window to rise
+
+            # 2. Press Ctrl+L
+            ctypes.windll.user32.keybd_event(VK_CONTROL, 0, 0, 0)
+            ctypes.windll.user32.keybd_event(VK_L, 0, 0, 0)
+            time.sleep(0.05)
+            ctypes.windll.user32.keybd_event(VK_L, 0, KEYEVENTF_KEYUP, 0)
+            ctypes.windll.user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
+            time.sleep(0.2)
+            
+            # 3. Type URL
+            for char in target_url:
+                vk = ctypes.windll.user32.VkKeyScanW(ord(char))
+                shift = (vk & 0x0100) != 0
+                vk_code = vk & 0xFF
+                
+                if shift:
+                    ctypes.windll.user32.keybd_event(0x10, 0, 0, 0)
+                ctypes.windll.user32.keybd_event(vk_code, 0, 0, 0)
+                time.sleep(0.01)
+                ctypes.windll.user32.keybd_event(vk_code, 0, KEYEVENTF_KEYUP, 0)
+                if shift:
+                    ctypes.windll.user32.keybd_event(0x10, 0, KEYEVENTF_KEYUP, 0)
+                time.sleep(0.02)
+                
+            # 4. Press Enter
+            time.sleep(0.1)
+            ctypes.windll.user32.keybd_event(VK_RETURN, 0, 0, 0)
+            time.sleep(0.05)
+            ctypes.windll.user32.keybd_event(VK_RETURN, 0, KEYEVENTF_KEYUP, 0)
+
+        # Bring window to front before typing
         try:
+            await self.page.bring_to_front()
+            
+            # Inject a unique title to find the EXACT window to focus
+            unique_title = f"PANTHER_TARGET_{int(time.time()*1000)}"
+            try:
+                await self.page.evaluate(f'document.title = "{unique_title}"')
+            except Exception:
+                pass
+            
+            await asyncio.sleep(0.8) # Wait for title to update in OS compositor
+            
+            # Run typing animation in a thread with focus stealing
+            await asyncio.to_thread(_type_url, url, unique_title)
+            
+            # Since enter might trigger navigation, we wait for it
             await self.page.wait_for_load_state("load", timeout=8000)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Typing animation failed: {e}. Falling back to standard navigation.")
+            await self.page.goto(url, wait_until="domcontentloaded", timeout=15000)
+            try:
+                await self.page.wait_for_load_state("load", timeout=8000)
+            except Exception:
+                pass
+                
         await asyncio.sleep(0.5)
 
     async def _screenshot(self) -> str:
