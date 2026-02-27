@@ -21,6 +21,7 @@ import re
 from typing import AsyncGenerator, Dict, List, Optional, Tuple
 
 from loguru import logger
+import aiohttp
 
 try:
     import google.generativeai as genai
@@ -107,25 +108,103 @@ SITE_MAP = {
     "perplexity": "https://www.perplexity.ai",
     "npmjs": "https://www.npmjs.com",
     "pypi": "https://pypi.org",
+    # Electronics / Tech
+    "samsung": "https://www.samsung.com",
+    "apple": "https://www.apple.com",
+    "microsoft": "https://www.microsoft.com",
+    "nvidia": "https://www.nvidia.com",
+    "intel": "https://www.intel.com",
+    "oneplus": "https://www.oneplus.com",
+    "nothing": "https://nothing.tech",
+    # Shopping
+    "walmart": "https://www.walmart.com",
+    "target": "https://www.target.com",
+    "bestbuy": "https://www.bestbuy.com",
+    "myntra": "https://www.myntra.com",
+    "meesho": "https://www.meesho.com",
+    "ajio": "https://www.ajio.com",
+    # Social / Media
+    "tiktok": "https://www.tiktok.com",
+    "twitch": "https://www.twitch.tv",
+    "discord": "https://discord.com",
+    "whatsapp": "https://web.whatsapp.com",
+    "telegram": "https://web.telegram.org",
+    # Utilities
+    "stackoverflow": "https://stackoverflow.com",
+    "w3schools": "https://www.w3schools.com",
+    "kaggle": "https://www.kaggle.com",
+    "huggingface": "https://huggingface.co",
 }
 
 
 def _extract_url(task: str) -> Optional[str]:
     """Extract URL from task text."""
+    # 1. Explicit URL
     m = re.search(r'https?://[^\s,\'"]+', task)
     if m:
         return m.group(0)
     m = re.search(r'www\.[^\s,\'"]+', task)
     if m:
         return "https://" + m.group(0)
+
+    # 2. Domain pattern (e.g. samsung.com)
     m = re.search(r'\b([a-zA-Z0-9][-a-zA-Z0-9]*\.(com|org|net|io|co|in|ai|dev|app|me|edu|gov))\b', task)
     if m:
         return "https://" + m.group(1)
+
     task_lower = task.lower()
-    for name, url in SITE_MAP.items():
-        if re.search(rf'\b{re.escape(name)}\b', task_lower):
-            return url
+
+    # 3. Fallback to None if not explicitly a URL structure. We will resolve via Perplexity if needed.
     return None
+
+async def _resolve_url_via_perplexity(task: str, api_key: str) -> Optional[str]:
+    """Use Perplexity API to intelligently resolve the official website domain from natural language."""
+    if not api_key:
+        return None
+        
+    url = "https://api.perplexity.ai/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "model": "sonar",
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are an expert at identifying official brand websites. Respond ONLY with valid JSON: {\"domain\": \"exact-root-domain.com\"}. Use web knowledge to find the canonical official site. Do not include www, paths, or explanations."
+            },
+            {
+                "role": "user",
+                "content": f"Extract the official website domain for: {task}"
+            }
+        ],
+        "max_tokens": 50,
+        "temperature": 0.1
+    }
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=data, timeout=10) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    content = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                    match = re.search(r'\{.*\}', content, re.DOTALL)
+                    if match:
+                        try:
+                            parsed = json.loads(match.group())
+                            domain = parsed.get("domain")
+                            if domain:
+                                if not domain.startswith("http"):
+                                    return f"https://www.{domain.replace('www.', '')}"
+                                return domain
+                        except json.JSONDecodeError:
+                            pass
+    except Exception as e:
+        logger.error(f"[SubAgent] Perplexity URL resolution failed: {e}")
+        
+    return None
+
 
 
 def _extract_search_query(task: str) -> Optional[str]:
@@ -141,7 +220,8 @@ def _extract_search_query(task: str) -> Optional[str]:
         if m:
             q = m.group(1).strip()
             for name in SITE_MAP:
-                q = re.sub(rf'\b{re.escape(name)}\b', '', q, flags=re.IGNORECASE).strip()
+                pass # removed aggressive stripping
+
             q = re.sub(r'\s+', ' ', q).strip().rstrip('.')
             if q and len(q) > 1:
                 return q
@@ -189,6 +269,16 @@ class BrowserSubAgent:
         # ── Pre-navigation ───────────────────────────────────────────────
         url = _extract_url(task)
         query = _extract_search_query(task)
+        
+        # If no explicit URL is found but the user wants to go to an official website or we have a query, ask Perplexity
+        if not url and (re.search(r'\b(website|site|page)\b', task.lower()) or " on " in task.lower()):
+            yield {"type": "action", "message": f"🌐 Resolving official website using Perplexity..."}
+            # Look for perplexity key
+            pplx_key = os.getenv("PERPLEXITY_API_KEY")
+            resolved_url = await _resolve_url_via_perplexity(task, pplx_key)
+            if resolved_url:
+                url = resolved_url
+                yield {"type": "action", "message": f"✨ Resolved to: {url}"}
 
         if url:
             yield {"type": "action", "message": f"🔗 Navigating to {url}"}
@@ -201,11 +291,26 @@ class BrowserSubAgent:
 
         # ── Quick search attempt ─────────────────────────────────────────
         if query:
+
             yield {"type": "action", "message": f"🔍 Searching: {query}"}
             searched = await self._universal_search(query)
             if searched:
                 await asyncio.sleep(2.0)
                 yield {"type": "action", "message": "✅ Search submitted"}
+
+        # ── Google fallback: if still on about:blank, search Google ──────
+        current = self.page.url
+        if not current or current in ("about:blank", ""):
+            google_query = query or task
+            yield {"type": "action", "message": f"🔍 No target URL found, searching Google: {google_query}"}
+            try:
+                import urllib.parse
+                google_url = f"https://www.google.com/search?q={urllib.parse.quote_plus(google_query)}"
+                await self._navigate(google_url)
+                yield {"type": "action", "message": f"✅ Google search loaded"}
+            except Exception as e:
+                yield {"type": "error", "message": f"Google fallback failed: {e}"}
+                return
 
         # ── Main agent loop ──────────────────────────────────────────────
         retries = 0

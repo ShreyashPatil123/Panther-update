@@ -1,17 +1,15 @@
 {
-  "test_date": "2026-02-23T15:24:55.868156+00:00",
+  "test_date": "2026-02-25T11:00:57.679540+00:00",
   "nvidia": {
     "total": 186,
-    "working_count": 112,
-    "failed_count": 74,
+    "working_count": 111,
+    "failed_count": 75,
     "working_models": [
       "abacusai/dracarys-llama-3.1-70b-instruct",
       "ai21labs/jamba-1.5-mini-instruct",
       "baichuan-inc/baichuan2-13b-chat",
-      "bytedance/seed-oss-36b-instruct",
       "deepseek-ai/deepseek-r1-distill-llama-8b",
       "deepseek-ai/deepseek-r1-distill-qwen-14b",
-      "deepseek-ai/deepseek-v3.1",
       "deepseek-ai/deepseek-v3.1-terminus",
       "google/gemma-2-27b-it",
       "google/gemma-2-2b-it",
@@ -24,7 +22,6 @@
       "google/gemma-7b",
       "google/shieldgemma-9b",
       "gotocompany/gemma-2-9b-cpt-sahabatai-instruct",
-      "ibm/granite-3.3-8b-instruct",
       "ibm/granite-guardian-3.0-8b",
       "igenius/italia_10b_instruct_16k",
       "institute-of-science-tokyo/llama-3.1-swallow-70b-instruct-v0.1",
@@ -37,9 +34,7 @@
       "meta/llama-3.2-11b-vision-instruct",
       "meta/llama-3.2-1b-instruct",
       "meta/llama-3.2-3b-instruct",
-      "meta/llama-3.2-90b-vision-instruct",
       "meta/llama-3.3-70b-instruct",
-      "meta/llama-4-maverick-17b-128e-instruct",
       "meta/llama-guard-4-12b",
       "meta/llama3-70b-instruct",
       "meta/llama3-8b-instruct",
@@ -52,6 +47,7 @@
       "microsoft/phi-3.5-mini-instruct",
       "microsoft/phi-3.5-vision-instruct",
       "microsoft/phi-4-mini-flash-reasoning",
+      "microsoft/phi-4-mini-instruct",
       "microsoft/phi-4-multimodal-instruct",
       "minimaxai/minimax-m2",
       "minimaxai/minimax-m2.1",
@@ -70,6 +66,7 @@
       "mistralai/mixtral-8x22b-instruct-v0.1",
       "mistralai/mixtral-8x7b-instruct-v0.1",
       "moonshotai/kimi-k2-instruct-0905",
+      "moonshotai/kimi-k2-thinking",
       "nvidia/llama-3.1-nemoguard-8b-content-safety",
       "nvidia/llama-3.1-nemoguard-8b-topic-control",
       "nvidia/llama-3.1-nemotron-70b-reward",
@@ -102,6 +99,7 @@
       "qwen/qwen3-coder-480b-a35b-instruct",
       "qwen/qwen3-next-80b-a3b-instruct",
       "qwen/qwen3-next-80b-a3b-thinking",
+      "qwen/qwen3.5-397b-a17b",
       "qwen/qwq-32b",
       "rakuten/rakutenai-7b-chat",
       "rakuten/rakutenai-7b-instruct",
@@ -116,23 +114,24 @@
       "upstage/solar-10.7b-instruct",
       "utter-project/eurollm-9b-instruct",
       "yentinglin/llama-3-taiwan-70b-instruct",
-      "z-ai/glm4.7"
+      "z-ai/glm4.7",
+      "z-ai/glm5"
     ],
     "failed_models": [
       {
         "model": "01-ai/yi-large",
         "status": "HTTP 404",
-        "detail": "Function '23bd454d-b225-49a3-8118-582a62fc51b8': Not found for account 'a7qwVzMt"
+        "detail": "Function '23bd454d-b225-49a3-8118-582a62fc51b8': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "adept/fuyu-8b",
         "status": "HTTP 404",
-        "detail": "Function 'e598bfc1-b058-41af-869d-556d3c7e1b48': Not found for account 'a7qwVzMt"
+        "detail": "Function 'e598bfc1-b058-41af-869d-556d3c7e1b48': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "ai21labs/jamba-1.5-large-instruct",
         "status": "HTTP 404",
-        "detail": "Function '6497fc2b-7ff8-4019-8946-123dccbfc863': Not found for account 'a7qwVzMt"
+        "detail": "Function '6497fc2b-7ff8-4019-8946-123dccbfc863': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "aisingapore/sea-lion-7b-instruct",
@@ -155,24 +154,34 @@
         "detail": "404 page not found\n"
       },
       {
-        "model": "databricks/dbrx-instruct",
-        "status": "HTTP 404",
-        "detail": "Function '3d6c2ff8-8bfc-4d10-8fd0-b7337288e869': Not found for account 'a7qwVzMt"
-      },
-      {
-        "model": "deepseek-ai/deepseek-coder-6.7b-instruct",
-        "status": "HTTP 404",
-        "detail": "Function 'e503b15c-62b0-4d69-b532-a88f0bfa2656': Not found for account 'a7qwVzMt"
-      },
-      {
-        "model": "deepseek-ai/deepseek-r1-distill-qwen-32b",
+        "model": "bytedance/seed-oss-36b-instruct",
         "status": "TIMEOUT",
         "detail": "Timed out"
       },
       {
+        "model": "databricks/dbrx-instruct",
+        "status": "HTTP 404",
+        "detail": "Function '3d6c2ff8-8bfc-4d10-8fd0-b7337288e869': Not found for account 'q4m0Tqg8"
+      },
+      {
+        "model": "deepseek-ai/deepseek-coder-6.7b-instruct",
+        "status": "HTTP 404",
+        "detail": "Function 'e503b15c-62b0-4d69-b532-a88f0bfa2656': Not found for account 'q4m0Tqg8"
+      },
+      {
+        "model": "deepseek-ai/deepseek-r1-distill-qwen-32b",
+        "status": "HTTP 500",
+        "detail": "Error during inference of request chat-6e869afc5d484c19876955d338601f4b -- Encou"
+      },
+      {
         "model": "deepseek-ai/deepseek-r1-distill-qwen-7b",
         "status": "HTTP 500",
-        "detail": "Error during inference of request chat-6f79648fd922498b881168403155c5b5 -- Encou"
+        "detail": "Error during inference of request chat-24bff0f501b24309aee7e099a6f0c85f -- Encou"
+      },
+      {
+        "model": "deepseek-ai/deepseek-v3.1",
+        "status": "TIMEOUT",
+        "detail": "Timed out"
       },
       {
         "model": "deepseek-ai/deepseek-v3.2",
@@ -182,22 +191,22 @@
       {
         "model": "google/codegemma-1.1-7b",
         "status": "HTTP 404",
-        "detail": "Function 'e2d298c5-204e-4213-b921-9f492cc9011b': Not found for account 'a7qwVzMt"
+        "detail": "Function 'e2d298c5-204e-4213-b921-9f492cc9011b': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "google/codegemma-7b",
         "status": "HTTP 404",
-        "detail": "Function '7dfc10a8-3cc4-448e-97c1-2213308dc222': Not found for account 'a7qwVzMt"
+        "detail": "Function '7dfc10a8-3cc4-448e-97c1-2213308dc222': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "google/deplot",
         "status": "HTTP 404",
-        "detail": "Function '784a8ca4-ea7d-4c93-bb46-ec027c3fae47': Not found for account 'a7qwVzMt"
+        "detail": "Function '784a8ca4-ea7d-4c93-bb46-ec027c3fae47': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "google/gemma-2b",
         "status": "HTTP 404",
-        "detail": "Function '04174188-f742-4069-9e72-d77c2b77d3cb': Not found for account 'a7qwVzMt"
+        "detail": "Function '04174188-f742-4069-9e72-d77c2b77d3cb': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "google/gemma-3-12b-it",
@@ -212,27 +221,32 @@
       {
         "model": "google/recurrentgemma-2b",
         "status": "HTTP 404",
-        "detail": "Function '2f495340-a99f-4b4b-89bd-1beb003dd896': Not found for account 'a7qwVzMt"
+        "detail": "Function '2f495340-a99f-4b4b-89bd-1beb003dd896': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "ibm/granite-3.0-3b-a800m-instruct",
         "status": "HTTP 404",
-        "detail": "Function '67324577-3f91-4aa6-b750-97468262530d': Not found for account 'a7qwVzMt"
+        "detail": "Function '67324577-3f91-4aa6-b750-97468262530d': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "ibm/granite-3.0-8b-instruct",
         "status": "HTTP 404",
-        "detail": "Function '5a24a4f0-2d59-46b3-ac65-42307f2633d1': Not found for account 'a7qwVzMt"
+        "detail": "Function '5a24a4f0-2d59-46b3-ac65-42307f2633d1': Not found for account 'q4m0Tqg8"
+      },
+      {
+        "model": "ibm/granite-3.3-8b-instruct",
+        "status": "TIMEOUT",
+        "detail": "Timed out"
       },
       {
         "model": "ibm/granite-34b-code-instruct",
         "status": "HTTP 404",
-        "detail": "Function '4df48b4f-e3c5-4ade-82c7-c06b65e25d18': Not found for account 'a7qwVzMt"
+        "detail": "Function '4df48b4f-e3c5-4ade-82c7-c06b65e25d18': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "ibm/granite-8b-code-instruct",
         "status": "HTTP 404",
-        "detail": "Function 'af7b6f03-f615-4c5f-86c6-388bd35cede0': Not found for account 'a7qwVzMt"
+        "detail": "Function 'af7b6f03-f615-4c5f-86c6-388bd35cede0': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "igenius/colosseum_355b_instruct_16k",
@@ -242,37 +256,42 @@
       {
         "model": "meta/codellama-70b",
         "status": "HTTP 404",
-        "detail": "Function 'f6b06895-d073-4714-8bb2-26c09e9f6597': Not found for account 'a7qwVzMt"
+        "detail": "Function 'f6b06895-d073-4714-8bb2-26c09e9f6597': Not found for account 'q4m0Tqg8"
+      },
+      {
+        "model": "meta/llama-3.2-90b-vision-instruct",
+        "status": "TIMEOUT",
+        "detail": "Timed out"
+      },
+      {
+        "model": "meta/llama-4-maverick-17b-128e-instruct",
+        "status": "TIMEOUT",
+        "detail": "Timed out"
       },
       {
         "model": "meta/llama-4-scout-17b-16e-instruct",
         "status": "HTTP 404",
-        "detail": "Function 'b6bb6e01-780e-4ba0-a5b8-379f00ed9b1c': Not found for account 'a7qwVzMt"
+        "detail": "Function 'b6bb6e01-780e-4ba0-a5b8-379f00ed9b1c': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "meta/llama2-70b",
         "status": "HTTP 404",
-        "detail": "Function '2fddadfb-7e76-4c8a-9b82-f7d3fab94471': Not found for account 'a7qwVzMt"
+        "detail": "Function '2fddadfb-7e76-4c8a-9b82-f7d3fab94471': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "microsoft/kosmos-2",
         "status": "HTTP 404",
-        "detail": "Function '6018fed7-f227-48dc-99bc-3fd4264d5037': Not found for account 'a7qwVzMt"
+        "detail": "Function '6018fed7-f227-48dc-99bc-3fd4264d5037': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "microsoft/phi-3-vision-128k-instruct",
         "status": "HTTP 404",
-        "detail": "Function '20f2537e-8593-4eb9-ad40-60eee3bbaa55': Not found for account 'a7qwVzMt"
+        "detail": "Function '20f2537e-8593-4eb9-ad40-60eee3bbaa55': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "microsoft/phi-3.5-moe-instruct",
         "status": "HTTP 404",
-        "detail": "Function 'e6cab982-62f4-481e-9a7a-3dedb87dbd01': Not found for account 'a7qwVzMt"
-      },
-      {
-        "model": "microsoft/phi-4-mini-instruct",
-        "status": "TIMEOUT",
-        "detail": "Timed out"
+        "detail": "Function 'e6cab982-62f4-481e-9a7a-3dedb87dbd01': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "mistralai/codestral-22b-instruct-v0.1",
@@ -282,12 +301,12 @@
       {
         "model": "mistralai/mistral-large",
         "status": "HTTP 404",
-        "detail": "Function '767b5b9a-3f9d-4c1d-86e8-fa861988cee7': Not found for account 'a7qwVzMt"
+        "detail": "Function '767b5b9a-3f9d-4c1d-86e8-fa861988cee7': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "mistralai/mistral-large-2-instruct",
         "status": "HTTP 404",
-        "detail": "Function '7fadd4de-e22a-48e4-90e9-f02ef14a74b9': Not found for account 'a7qwVzMt"
+        "detail": "Function '7fadd4de-e22a-48e4-90e9-f02ef14a74b9': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "mistralai/mixtral-8x22b-v0.1",
@@ -300,11 +319,6 @@
         "detail": "Timed out"
       },
       {
-        "model": "moonshotai/kimi-k2-thinking",
-        "status": "TIMEOUT",
-        "detail": "Timed out"
-      },
-      {
         "model": "moonshotai/kimi-k2.5",
         "status": "TIMEOUT",
         "detail": "Timed out"
@@ -312,12 +326,12 @@
       {
         "model": "nv-mistralai/mistral-nemo-12b-instruct",
         "status": "HTTP 404",
-        "detail": "Function 'f8c05193-d2e2-4f0f-bb4d-7ad70070002b': Not found for account 'a7qwVzMt"
+        "detail": "Function 'f8c05193-d2e2-4f0f-bb4d-7ad70070002b': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "nvidia/cosmos-reason2-8b",
         "status": "HTTP 404",
-        "detail": "Function 'e199b43b-6c62-4a63-9379-f60e1a953236': Not found for account 'a7qwVzMt"
+        "detail": "Function 'e199b43b-6c62-4a63-9379-f60e1a953236': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "nvidia/embed-qa-4",
@@ -327,12 +341,12 @@
       {
         "model": "nvidia/llama-3.1-nemotron-51b-instruct",
         "status": "HTTP 404",
-        "detail": "Function '5beba52c-65a9-4f46-8cd9-656689a1b205': Not found for account 'a7qwVzMt"
+        "detail": "Function '5beba52c-65a9-4f46-8cd9-656689a1b205': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "nvidia/llama-3.1-nemotron-70b-instruct",
         "status": "HTTP 404",
-        "detail": "Function '9b96341b-9791-4db9-a00d-4e43aa192a39': Not found for account 'a7qwVzMt"
+        "detail": "Function '9b96341b-9791-4db9-a00d-4e43aa192a39': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "nvidia/llama-3.2-nemoretriever-1b-vlm-embed-v1",
@@ -367,12 +381,12 @@
       {
         "model": "nvidia/llama3-chatqa-1.5-70b",
         "status": "HTTP 404",
-        "detail": "Function '46594287-38b9-481c-a37f-baa02f2d3ba1': Not found for account 'a7qwVzMt"
+        "detail": "Function '46594287-38b9-481c-a37f-baa02f2d3ba1': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "nvidia/mistral-nemo-minitron-8b-8k-instruct",
         "status": "HTTP 404",
-        "detail": "Function '5aa06dd2-0a02-4a5d-be4c-bf88e956965d': Not found for account 'a7qwVzMt"
+        "detail": "Function '5aa06dd2-0a02-4a5d-be4c-bf88e956965d': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "nvidia/mistral-nemo-minitron-8b-base",
@@ -387,12 +401,12 @@
       {
         "model": "nvidia/nemotron-4-340b-instruct",
         "status": "HTTP 404",
-        "detail": "Function 'b0fcd392-e905-4ab4-8eb9-aeae95c30b37': Not found for account 'a7qwVzMt"
+        "detail": "Function 'b0fcd392-e905-4ab4-8eb9-aeae95c30b37': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "nvidia/nemotron-4-340b-reward",
         "status": "HTTP 404",
-        "detail": "Function 'c53ee0e9-bad9-4e09-b365-52c9d6b71254': Not found for account 'a7qwVzMt"
+        "detail": "Function 'c53ee0e9-bad9-4e09-b365-52c9d6b71254': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "nvidia/nemotron-nano-3-30b-a3b",
@@ -407,7 +421,7 @@
       {
         "model": "nvidia/neva-22b",
         "status": "HTTP 404",
-        "detail": "Function 'bc205f8e-1740-40df-8d32-c4321763498a': Not found for account 'a7qwVzMt"
+        "detail": "Function 'bc205f8e-1740-40df-8d32-c4321763498a': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "nvidia/nv-embed-v1",
@@ -437,7 +451,7 @@
       {
         "model": "nvidia/riva-translate-4b-instruct",
         "status": "HTTP 404",
-        "detail": "Function 'f35337fa-b4dd-4996-bcba-5476ee01171d': Not found for account 'a7qwVzMt"
+        "detail": "Function 'f35337fa-b4dd-4996-bcba-5476ee01171d': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "nvidia/streampetr",
@@ -447,12 +461,7 @@
       {
         "model": "nvidia/vila",
         "status": "HTTP 404",
-        "detail": "Function '1c8df143-2303-419b-8b28-b4dd82cfe113': Not found for account 'a7qwVzMt"
-      },
-      {
-        "model": "qwen/qwen3.5-397b-a17b",
-        "status": "TIMEOUT",
-        "detail": "Timed out"
+        "detail": "Function '1c8df143-2303-419b-8b28-b4dd82cfe113': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "snowflake/arctic-embed-l",
@@ -462,85 +471,143 @@
       {
         "model": "writer/palmyra-creative-122b",
         "status": "HTTP 404",
-        "detail": "Function '00bdd0a7-e38f-4423-9007-c4d8730a3f78': Not found for account 'a7qwVzMt"
+        "detail": "Function '00bdd0a7-e38f-4423-9007-c4d8730a3f78': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "writer/palmyra-fin-70b-32k",
         "status": "HTTP 404",
-        "detail": "Function '316490c6-f1ed-41f9-9da8-3fa9e885653b': Not found for account 'a7qwVzMt"
+        "detail": "Function '316490c6-f1ed-41f9-9da8-3fa9e885653b': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "writer/palmyra-med-70b",
         "status": "HTTP 404",
-        "detail": "Function 'aab71274-5281-4941-b0b8-20f339d1fc7e': Not found for account 'a7qwVzMt"
+        "detail": "Function 'aab71274-5281-4941-b0b8-20f339d1fc7e': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "writer/palmyra-med-70b-32k",
         "status": "HTTP 404",
-        "detail": "Function 'd6faa974-3591-49a4-963d-97221d074b2e': Not found for account 'a7qwVzMt"
-      },
-      {
-        "model": "z-ai/glm5",
-        "status": "TIMEOUT",
-        "detail": "Timed out"
+        "detail": "Function 'd6faa974-3591-49a4-963d-97221d074b2e': Not found for account 'q4m0Tqg8"
       },
       {
         "model": "zyphra/zamba2-7b-instruct",
         "status": "HTTP 404",
-        "detail": "Function '8378ffb2-51b0-4140-9684-dda1889373e6': Not found for account 'a7qwVzMt"
-      }
-    ]
-  },
-  "ollama": {
-    "total": 32,
-    "working_count": 31,
-    "failed_count": 1,
-    "working_models": [
-      "cogito-2.1:671b",
-      "deepseek-v3.1:671b",
-      "deepseek-v3.2",
-      "devstral-2:123b",
-      "devstral-small-2:24b",
-      "gemini-3-flash-preview",
-      "gemma3:12b",
-      "gemma3:27b",
-      "gemma3:4b",
-      "glm-4.6",
-      "glm-4.7",
-      "glm-5",
-      "gpt-oss:120b",
-      "gpt-oss:20b",
-      "kimi-k2-thinking",
-      "kimi-k2.5",
-      "kimi-k2:1t",
-      "minimax-m2",
-      "minimax-m2.1",
-      "minimax-m2.5",
-      "ministral-3:14b",
-      "ministral-3:3b",
-      "ministral-3:8b",
-      "mistral-large-3:675b",
-      "nemotron-3-nano:30b",
-      "qwen3-coder:480b",
-      "qwen3-next:80b",
-      "qwen3-vl:235b",
-      "qwen3-vl:235b-instruct",
-      "qwen3.5:397b",
-      "rnj-1:8b"
-    ],
-    "failed_models": [
-      {
-        "model": "qwen3-coder-next",
-        "status": "HTTP 500",
-        "detail": "Internal Server Error"
+        "detail": "Function '8378ffb2-51b0-4140-9684-dda1889373e6': Not found for account 'q4m0Tqg8"
       }
     ]
   },
   "gemini": {
-    "total": 0,
-    "working_count": 0,
-    "failed_count": 0,
-    "working_models": [],
-    "failed_models": []
+    "total": 30,
+    "working_count": 11,
+    "failed_count": 19,
+    "working_models": [
+      "gemini-2.5-flash",
+      "gemini-2.5-flash-lite",
+      "gemini-3-flash-preview",
+      "gemini-flash-latest",
+      "gemini-flash-lite-latest",
+      "gemini-robotics-er-1.5-preview",
+      "gemma-3-12b-it",
+      "gemma-3-1b-it",
+      "gemma-3-27b-it",
+      "gemma-3-4b-it",
+      "gemma-3n-e2b-it"
+    ],
+    "failed_models": [
+      {
+        "model": "deep-research-pro-preview-12-2025",
+        "status": "HTTP 429",
+        "detail": "[{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota"
+      },
+      {
+        "model": "gemini-2.0-flash",
+        "status": "HTTP 429",
+        "detail": "[{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota"
+      },
+      {
+        "model": "gemini-2.0-flash-001",
+        "status": "HTTP 429",
+        "detail": "[{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota"
+      },
+      {
+        "model": "gemini-2.0-flash-exp-image-generation",
+        "status": "HTTP 429",
+        "detail": "[{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota"
+      },
+      {
+        "model": "gemini-2.0-flash-lite",
+        "status": "HTTP 429",
+        "detail": "[{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota"
+      },
+      {
+        "model": "gemini-2.0-flash-lite-001",
+        "status": "HTTP 429",
+        "detail": "[{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota"
+      },
+      {
+        "model": "gemini-2.5-computer-use-preview-10-2025",
+        "status": "HTTP 429",
+        "detail": "[{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota"
+      },
+      {
+        "model": "gemini-2.5-flash-image",
+        "status": "HTTP 429",
+        "detail": "[{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota"
+      },
+      {
+        "model": "gemini-2.5-flash-lite-preview-09-2025",
+        "status": "TIMEOUT",
+        "detail": "Timed out"
+      },
+      {
+        "model": "gemini-2.5-flash-preview-tts",
+        "status": "HTTP 400",
+        "detail": "[{\n  \"error\": {\n    \"code\": 400,\n    \"message\": \"The requested combination of re"
+      },
+      {
+        "model": "gemini-2.5-pro",
+        "status": "HTTP 429",
+        "detail": "[{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota"
+      },
+      {
+        "model": "gemini-2.5-pro-preview-tts",
+        "status": "HTTP 429",
+        "detail": "[{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota"
+      },
+      {
+        "model": "gemini-3-pro-image-preview",
+        "status": "HTTP 429",
+        "detail": "[{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota"
+      },
+      {
+        "model": "gemini-3-pro-preview",
+        "status": "HTTP 429",
+        "detail": "[{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota"
+      },
+      {
+        "model": "gemini-3.1-pro-preview",
+        "status": "HTTP 429",
+        "detail": "[{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota"
+      },
+      {
+        "model": "gemini-3.1-pro-preview-customtools",
+        "status": "HTTP 429",
+        "detail": "[{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota"
+      },
+      {
+        "model": "gemini-pro-latest",
+        "status": "HTTP 429",
+        "detail": "[{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota"
+      },
+      {
+        "model": "gemma-3n-e4b-it",
+        "status": "HTTP 503",
+        "detail": "[{\n  \"error\": {\n    \"code\": 503,\n    \"message\": \"This model is currently experie"
+      },
+      {
+        "model": "nano-banana-pro-preview",
+        "status": "HTTP 429",
+        "detail": "[{\n  \"error\": {\n    \"code\": 429,\n    \"message\": \"You exceeded your current quota"
+      }
+    ]
   }
 }

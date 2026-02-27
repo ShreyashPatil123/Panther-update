@@ -30,11 +30,30 @@ def _resolve_provider_credentials(config, provider: str) -> Tuple[str, str]:
     return key, url
 
 
+def _friendly_error(provider: str, status_code: int, detail: str = "") -> str:
+    """Return a user-friendly error message for common HTTP status codes."""
+    if status_code == 401:
+        return f"{provider.title()} API key is invalid or expired. Check your Settings."
+    elif status_code == 403:
+        return f"{provider.title()} API key lacks permission for this model."
+    elif status_code == 404:
+        return f"Model not found on {provider.title()}. It may have been retired."
+    elif status_code == 429:
+        return f"{provider.title()} rate limit exceeded. Please wait a moment and try again."
+    elif status_code in (502, 503, 504):
+        return f"{provider.title()} service is temporarily unavailable. Please retry."
+    elif detail:
+        return f"{provider.title()} error ({status_code}): {detail[:200]}"
+    else:
+        return f"{provider.title()} returned HTTP {status_code}."
+
+
 async def _stream_slot(
     ws: WebSocket,
     config,
     slot_conf: Dict[str, Any],
     prompt: str,
+    system_prompt: str = "",
 ) -> None:
     """Stream a single comparison slot — ephemeral client, tagged chunks."""
     slot_id = slot_conf["slot_id"]
@@ -55,15 +74,19 @@ async def _stream_slot(
         await ws.send_json({
             "type": "compare_error",
             "slot_id": slot_id,
-            "text": f"{provider.title()} API key not configured.",
+            "text": f"{provider.title()} API key not configured. Add it in Settings first.",
         })
         return
 
-    client = NVIDIAClient(api_key=api_key, base_url=base_url, timeout=120.0)
-    messages: List[Dict[str, str]] = [
-        {"role": "system", "content": "You are a helpful AI assistant. Use markdown formatting."},
-        {"role": "user", "content": prompt},
-    ]
+    client = NVIDIAClient(api_key=api_key, base_url=base_url, timeout=180.0)
+
+    # Build messages with optional system prompt
+    messages: List[Dict[str, str]] = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    else:
+        messages.append({"role": "system", "content": "You are a helpful AI assistant. Use markdown formatting."})
+    messages.append({"role": "user", "content": prompt})
 
     start = time.monotonic()
     ttft: float = 0
@@ -90,6 +113,9 @@ async def _stream_slot(
             })
 
         total_ms = (time.monotonic() - start) * 1000
+        total_sec = total_ms / 1000
+        tok_per_sec = round(token_estimate / total_sec, 1) if total_sec > 0 else 0
+
         await ws.send_json({
             "type": "compare_done",
             "slot_id": slot_id,
@@ -99,19 +125,26 @@ async def _stream_slot(
                 "ttft_ms": round(ttft, 1),
                 "total_ms": round(total_ms, 1),
                 "token_count": token_estimate,
+                "tok_per_sec": tok_per_sec,
             },
         })
 
     except asyncio.CancelledError:
-        # Slot was cancelled — no message needed
         pass
     except Exception as e:
         logger.error(f"Compare slot {slot_id} ({model_id}) error: {e}")
+        # Try to extract HTTP status code for friendly messages
+        error_text = str(e)
+        status_code = 0
+        if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
+            status_code = e.response.status_code
+            error_text = _friendly_error(provider, status_code, str(e))
+
         try:
             await ws.send_json({
                 "type": "compare_error",
                 "slot_id": slot_id,
-                "text": str(e),
+                "text": error_text,
             })
         except Exception:
             pass
@@ -141,12 +174,12 @@ async def _await_all_and_signal(
 async def ws_compare(websocket: WebSocket, session_id: str):
     """WebSocket endpoint for compare mode.
 
-    Protocol (client → server):
-        { "action": "compare", "prompt": "...", "slots": [...] }
-        { "action": "compare_rerun", "prompt": "...", "slot": {...} }
+    Protocol (client -> server):
+        { "action": "compare", "prompt": "...", "system_prompt": "...", "slots": [...] }
+        { "action": "compare_rerun", "prompt": "...", "system_prompt": "...", "slot": {...} }
         { "action": "compare_cancel" }
 
-    Protocol (server → client):
+    Protocol (server -> client):
         { "type": "compare_chunk",    "slot_id": N, "text": "..." }
         { "type": "compare_done",     "slot_id": N, "meta": {...} }
         { "type": "compare_error",    "slot_id": N, "text": "..." }
@@ -163,6 +196,7 @@ async def ws_compare(websocket: WebSocket, session_id: str):
         while True:
             data = await websocket.receive_json()
             action = data.get("action")
+            system_prompt = data.get("system_prompt", "")
 
             # ── Run all slots ──────────────────────────────────────────────
             if action == "compare":
@@ -187,7 +221,7 @@ async def ws_compare(websocket: WebSocket, session_id: str):
                 for slot_conf in slots:
                     sid = slot_conf.get("slot_id", 0)
                     task = asyncio.create_task(
-                        _stream_slot(websocket, config, slot_conf, prompt)
+                        _stream_slot(websocket, config, slot_conf, prompt, system_prompt)
                     )
                     active_tasks[sid] = task
 
@@ -207,7 +241,7 @@ async def ws_compare(websocket: WebSocket, session_id: str):
 
                 if prompt and slot_conf.get("model_id"):
                     task = asyncio.create_task(
-                        _stream_slot(websocket, config, slot_conf, prompt)
+                        _stream_slot(websocket, config, slot_conf, prompt, system_prompt)
                     )
                     active_tasks[sid] = task
 

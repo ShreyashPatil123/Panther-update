@@ -1,9 +1,9 @@
 /**
- * PANTHER Compare — Side-by-side model comparison
- * Vertex AI Studio-inspired multi-model streaming comparison.
+ * PANTHER Compare — Vertex AI Studio-Style Multi-Model Playground
+ * Concurrent WebSocket streaming · Performance metrics · Synchronized scroll
  */
 
-/* ── Marked / hljs config ─────────────────────────────────── */
+/* ── Marked / hljs config ──────────────────────────────────── */
 marked.setOptions({
   breaks: true,
   gfm: true,
@@ -13,30 +13,38 @@ marked.setOptions({
   },
 });
 
-/* ── State ─────────────────────────────────────────────────── */
+/* ── State ──────────────────────────────────────────────────── */
 const cmp = {
   ws: null,
   sessionId: crypto.randomUUID(),
-  allModels: [],              // fetched from /api/models
-  slots: [],                  // [{slotId, modelId, provider, temp, maxTokens, topP}]
-  slotEls: {},                // slotId -> {container, content, meta, accText}
-  nextSlotId: 0,
+  allModels: [],
+  panes: [],            // [{paneId, modelId, provider, temp, maxTokens, topP}]
+  paneEls: {},           // paneId -> {container, content, metrics, progress, accText}
+  nextPaneId: 0,
   isRunning: false,
-  runningSlots: new Set(),
+  runningPanes: new Set(),
+  syncScrollEnabled: true,
+  scrollLock: false,      // prevents recursive scroll events
 };
 
 /* ── DOM refs ──────────────────────────────────────────────── */
-const el = {
-  grid:       document.getElementById('compareGrid'),
-  prompt:     document.getElementById('comparePrompt'),
-  runBtn:     document.getElementById('runAllBtn'),
-  cancelBtn:  document.getElementById('cancelBtn'),
-  addBtn:     document.getElementById('addSlotBtn'),
-  status:     document.getElementById('compareStatus'),
+const $ = {
+  workspace:    document.getElementById('workspace'),
+  userPrompt:   document.getElementById('userPrompt'),
+  systemPrompt: document.getElementById('systemPrompt'),
+  runBtn:       document.getElementById('runAllBtn'),
+  cancelBtn:    document.getElementById('cancelBtn'),
+  addBtn:       document.getElementById('addPaneBtn'),
+  statusBar:    document.getElementById('statusBar'),
+  paneCount:    document.getElementById('paneCount'),
+  systemToggle: document.getElementById('systemToggle'),
+  systemBody:   document.getElementById('systemBody'),
+  systemChevron:document.getElementById('systemChevron'),
 };
 
+
 /* ══════════════════════════════════════════════════════════════
-   Models fetch (reuses existing /api/models endpoint)
+   Models Discovery
    ══════════════════════════════════════════════════════════════ */
 async function fetchModels() {
   try {
@@ -48,121 +56,161 @@ async function fetchModels() {
   }
 }
 
+
 /* ══════════════════════════════════════════════════════════════
-   Slot Management
+   Pane Management
    ══════════════════════════════════════════════════════════════ */
-function addSlot(preselect) {
-  if (cmp.slots.length >= 4) return;
+function addPane(preselect) {
+  if (cmp.panes.length >= 4) return;
 
-  const slotId = cmp.nextSlotId++;
-  const slot = {
-    slotId,
-    modelId: preselect?.modelId || '',
-    provider: preselect?.provider || 'nvidia',
-    temp: preselect?.temp ?? 0.7,
+  const paneId = cmp.nextPaneId++;
+  const pane = {
+    paneId,
+    modelId:   preselect?.modelId || '',
+    provider:  preselect?.provider || 'nvidia',
+    temp:      preselect?.temp ?? 0.7,
     maxTokens: preselect?.maxTokens ?? 4096,
-    topP: preselect?.topP ?? 1.0,
+    topP:      preselect?.topP ?? 1.0,
   };
-  cmp.slots.push(slot);
+  cmp.panes.push(pane);
 
-  // Build DOM
-  const col = document.createElement('div');
-  col.className = 'compare-slot';
-  col.id = `slot-${slotId}`;
-  col.innerHTML = `
-    <div class="slot-header">
-      <div class="slot-header-top">
-        <span class="slot-number">Slot ${slotId + 1}</span>
-        <button class="slot-remove-btn" data-slot="${slotId}" title="Remove">&times;</button>
+  const el = document.createElement('div');
+  el.className = 'cmp-pane';
+  el.id = `pane-${paneId}`;
+  el.innerHTML = `
+    <div class="cmp-pane-progress" id="progress-${paneId}"></div>
+    <div class="cmp-pane-header">
+      <div class="cmp-pane-header-top">
+        <span class="cmp-pane-label">Model ${paneId + 1}</span>
+        <button class="cmp-pane-remove" data-pane="${paneId}" title="Remove pane">
+          <span class="material-symbols-rounded">close</span>
+        </button>
       </div>
-      <select class="slot-model-select" data-slot="${slotId}">
+      <select class="cmp-model-select" data-pane="${paneId}">
         <option value="">Select a model...</option>
       </select>
-      <div class="slot-params">
-        <div class="slot-param">
-          <label>Temp</label>
-          <input type="range" min="0" max="2" step="0.1" value="${slot.temp}"
-                 data-slot="${slotId}" data-param="temp" />
-          <span class="slot-param-value" id="tempVal-${slotId}">${slot.temp}</span>
-        </div>
-        <div class="slot-param">
-          <label>Max Tokens</label>
-          <input type="number" min="64" max="16384" step="64" value="${slot.maxTokens}"
-                 data-slot="${slotId}" data-param="maxTokens" />
-        </div>
-        <div class="slot-param">
-          <label>Top-P</label>
-          <input type="range" min="0" max="1" step="0.05" value="${slot.topP}"
-                 data-slot="${slotId}" data-param="topP" />
-          <span class="slot-param-value" id="topPVal-${slotId}">${slot.topP}</span>
+      <button class="cmp-params-toggle" data-pane="${paneId}">
+        <span class="material-symbols-rounded">expand_more</span>
+        Parameters
+      </button>
+      <div class="cmp-params-body" id="params-${paneId}">
+        <div class="cmp-params-grid">
+          <div class="cmp-param">
+            <div class="cmp-param-label">
+              <span>Temp</span>
+              <span class="cmp-param-value" id="tempVal-${paneId}">${pane.temp.toFixed(1)}</span>
+            </div>
+            <input type="range" min="0" max="2" step="0.1" value="${pane.temp}"
+                   data-pane="${paneId}" data-param="temp" />
+          </div>
+          <div class="cmp-param">
+            <div class="cmp-param-label">
+              <span>Max Tokens</span>
+            </div>
+            <input type="number" min="64" max="32768" step="64" value="${pane.maxTokens}"
+                   data-pane="${paneId}" data-param="maxTokens" />
+          </div>
+          <div class="cmp-param">
+            <div class="cmp-param-label">
+              <span>Top-P</span>
+              <span class="cmp-param-value" id="topPVal-${paneId}">${pane.topP.toFixed(2)}</span>
+            </div>
+            <input type="range" min="0" max="1" step="0.05" value="${pane.topP}"
+                   data-pane="${paneId}" data-param="topP" />
+          </div>
         </div>
       </div>
     </div>
-    <div class="slot-content" id="slotContent-${slotId}">
-      <div class="slot-empty">Response will appear here</div>
+    <div class="cmp-pane-content" id="content-${paneId}">
+      <div class="cmp-empty">
+        <span class="material-symbols-rounded">smart_toy</span>
+        <span>Response will appear here</span>
+      </div>
     </div>
-    <div class="slot-meta" id="slotMeta-${slotId}"></div>
-    <div class="slot-actions">
-      <button class="slot-action-btn" data-action="rerun" data-slot="${slotId}">Re-run</button>
-      <button class="slot-action-btn" data-action="copy" data-slot="${slotId}">Copy</button>
+    <div class="cmp-pane-footer">
+      <div class="cmp-pane-metrics" id="metrics-${paneId}"></div>
+      <div class="cmp-pane-actions">
+        <button class="cmp-action-btn" data-action="rerun" data-pane="${paneId}">
+          <span class="material-symbols-rounded">replay</span> Re-run
+        </button>
+        <button class="cmp-action-btn" data-action="copy" data-pane="${paneId}">
+          <span class="material-symbols-rounded">content_copy</span> Copy
+        </button>
+      </div>
     </div>
   `;
 
-  el.grid.appendChild(col);
+  $.workspace.appendChild(el);
 
-  // Store element refs
-  cmp.slotEls[slotId] = {
-    container: col,
-    content: col.querySelector(`#slotContent-${slotId}`),
-    meta: col.querySelector(`#slotMeta-${slotId}`),
-    accText: '',
+  cmp.paneEls[paneId] = {
+    container: el,
+    content:   el.querySelector(`#content-${paneId}`),
+    metrics:   el.querySelector(`#metrics-${paneId}`),
+    progress:  el.querySelector(`#progress-${paneId}`),
+    accText:   '',
   };
 
-  // Populate model dropdown
-  populateModelSelect(slotId, slot.modelId);
+  populateModelSelect(paneId, pane.modelId);
+  bindPaneEvents(el, pane, paneId);
+  setupSyncScroll(paneId);
+  updatePaneCount();
+  saveState();
+}
 
-  // Bind events
-  col.querySelector('.slot-remove-btn').addEventListener('click', () => removeSlot(slotId));
-  col.querySelector('.slot-model-select').addEventListener('change', (e) => {
+function bindPaneEvents(el, pane, paneId) {
+  // Remove button
+  el.querySelector('.cmp-pane-remove').addEventListener('click', () => removePane(paneId));
+
+  // Model select
+  el.querySelector('.cmp-model-select').addEventListener('change', (e) => {
     const opt = e.target.selectedOptions[0];
-    slot.modelId = e.target.value;
-    slot.provider = opt?.dataset.provider || 'nvidia';
+    pane.modelId = e.target.value;
+    pane.provider = opt?.dataset.provider || 'nvidia';
+    saveState();
   });
-  col.querySelectorAll('input[data-param]').forEach(inp => {
+
+  // Params toggle
+  el.querySelector('.cmp-params-toggle').addEventListener('click', (e) => {
+    const btn = e.currentTarget;
+    const body = el.querySelector(`#params-${paneId}`);
+    btn.classList.toggle('open');
+    body.classList.toggle('open');
+  });
+
+  // Param inputs
+  el.querySelectorAll('input[data-param]').forEach(inp => {
     inp.addEventListener('input', () => {
       const param = inp.dataset.param;
       const val = parseFloat(inp.value);
-      slot[param] = val;
-      // Update displayed value for sliders
-      if (param === 'temp') document.getElementById(`tempVal-${slotId}`).textContent = val.toFixed(1);
-      if (param === 'topP') document.getElementById(`topPVal-${slotId}`).textContent = val.toFixed(2);
+      pane[param] = val;
+      if (param === 'temp') document.getElementById(`tempVal-${paneId}`).textContent = val.toFixed(1);
+      if (param === 'topP') document.getElementById(`topPVal-${paneId}`).textContent = val.toFixed(2);
+      saveState();
     });
   });
-  col.querySelector('[data-action="rerun"]').addEventListener('click', () => rerunSlot(slotId));
-  col.querySelector('[data-action="copy"]').addEventListener('click', () => copySlotResponse(slotId));
 
-  updateGridCols();
+  // Action buttons
+  el.querySelector('[data-action="rerun"]').addEventListener('click', () => rerunPane(paneId));
+  el.querySelector('[data-action="copy"]').addEventListener('click', () => copyPaneResponse(paneId));
+}
+
+function removePane(paneId) {
+  if (cmp.panes.length <= 2) return;
+  cmp.panes = cmp.panes.filter(p => p.paneId !== paneId);
+  const container = cmp.paneEls[paneId]?.container;
+  if (container) container.remove();
+  delete cmp.paneEls[paneId];
+  updatePaneCount();
   saveState();
 }
 
-function removeSlot(slotId) {
-  if (cmp.slots.length <= 2) return; // minimum 2
-  cmp.slots = cmp.slots.filter(s => s.slotId !== slotId);
-  const colEl = cmp.slotEls[slotId]?.container;
-  if (colEl) colEl.remove();
-  delete cmp.slotEls[slotId];
-  updateGridCols();
-  saveState();
-}
-
-function populateModelSelect(slotId, preselect) {
-  const sel = document.querySelector(`.slot-model-select[data-slot="${slotId}"]`);
+function populateModelSelect(paneId, preselect) {
+  const sel = document.querySelector(`.cmp-model-select[data-pane="${paneId}"]`);
   if (!sel) return;
 
-  // Group by provider
   const groups = {};
-  const provOrder = ['nvidia', 'ollama', 'gemini'];
-  const provLabels = { nvidia: 'NVIDIA NIM', ollama: 'Ollama', gemini: 'Google Gemini' };
+  const provOrder = ['nvidia', 'gemini', 'ollama'];
+  const provLabels = { nvidia: 'NVIDIA NIM', gemini: 'Google Gemini', ollama: 'Ollama' };
 
   cmp.allModels.forEach(m => {
     if (!groups[m.provider]) groups[m.provider] = [];
@@ -183,29 +231,57 @@ function populateModelSelect(slotId, preselect) {
   });
   sel.innerHTML = html;
 
-  // If preselected, update the slot provider
   if (preselect) {
-    const slot = cmp.slots.find(s => s.slotId === slotId);
+    const pane = cmp.panes.find(p => p.paneId === paneId);
     const model = cmp.allModels.find(m => (m.full_id || m.id) === preselect);
-    if (slot && model) slot.provider = model.provider;
+    if (pane && model) pane.provider = model.provider;
   }
 }
 
-function updateGridCols() {
-  el.grid.classList.remove('cols-3', 'cols-4');
-  if (cmp.slots.length === 3) el.grid.classList.add('cols-3');
-  if (cmp.slots.length >= 4) el.grid.classList.add('cols-4');
-
-  // Update add button state
-  el.addBtn.style.display = cmp.slots.length >= 4 ? 'none' : '';
+function updatePaneCount() {
+  $.paneCount.textContent = `${cmp.panes.length} model${cmp.panes.length !== 1 ? 's' : ''}`;
+  $.addBtn.style.display = cmp.panes.length >= 4 ? 'none' : '';
 }
 
+
 /* ══════════════════════════════════════════════════════════════
-   WebSocket
+   Synchronized Scrolling
+   ══════════════════════════════════════════════════════════════ */
+function setupSyncScroll(paneId) {
+  const contentEl = cmp.paneEls[paneId]?.content;
+  if (!contentEl) return;
+
+  contentEl.addEventListener('scroll', () => {
+    if (!cmp.syncScrollEnabled || cmp.scrollLock) return;
+    cmp.scrollLock = true;
+
+    const scrollRatio = contentEl.scrollTop / Math.max(1, contentEl.scrollHeight - contentEl.clientHeight);
+
+    for (const [id, p] of Object.entries(cmp.paneEls)) {
+      if (parseInt(id) === paneId) continue;
+      const target = p.content;
+      const maxScroll = target.scrollHeight - target.clientHeight;
+      target.classList.add('sync-scrolling');
+      target.scrollTop = scrollRatio * maxScroll;
+    }
+
+    requestAnimationFrame(() => {
+      cmp.scrollLock = false;
+      for (const p of Object.values(cmp.paneEls)) {
+        p.content.classList.remove('sync-scrolling');
+      }
+    });
+  });
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   WebSocket Connection
    ══════════════════════════════════════════════════════════════ */
 function connectWS() {
   setStatus('Connecting...');
-  const url = `ws://${location.host}/ws/compare/${cmp.sessionId}`;
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = `${proto}//${location.host}/ws/compare/${cmp.sessionId}`;
   cmp.ws = new WebSocket(url);
 
   cmp.ws.onopen = () => setStatus('Ready');
@@ -218,155 +294,187 @@ function connectWS() {
   cmp.ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     switch (msg.type) {
-      case 'compare_chunk':   handleChunk(msg.slot_id, msg.text); break;
-      case 'compare_done':    handleDone(msg.slot_id, msg.meta); break;
-      case 'compare_error':   handleError(msg.slot_id, msg.text); break;
+      case 'compare_chunk':    handleChunk(msg.slot_id, msg.text); break;
+      case 'compare_done':     handleDone(msg.slot_id, msg.meta); break;
+      case 'compare_error':    handleError(msg.slot_id, msg.text); break;
       case 'compare_all_done': handleAllDone(); break;
     }
   };
 }
 
+
 /* ══════════════════════════════════════════════════════════════
    Message Handlers
    ══════════════════════════════════════════════════════════════ */
-function handleChunk(slotId, text) {
-  const s = cmp.slotEls[slotId];
-  if (!s) return;
-  s.accText += text;
-  s.content.innerHTML = marked.parse(s.accText);
-  s.content.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
-  s.container.classList.add('streaming');
+function handleChunk(paneId, text) {
+  const p = cmp.paneEls[paneId];
+  if (!p) return;
+  p.accText += text;
+  p.content.innerHTML = marked.parse(p.accText);
+  p.content.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
+  // Auto-scroll to bottom
+  p.content.scrollTop = p.content.scrollHeight;
 }
 
-function handleDone(slotId, meta) {
-  const s = cmp.slotEls[slotId];
-  if (!s) return;
-  cmp.runningSlots.delete(slotId);
-  s.container.classList.remove('streaming');
+function handleDone(paneId, meta) {
+  const p = cmp.paneEls[paneId];
+  if (!p) return;
+  cmp.runningPanes.delete(paneId);
+
+  // Stop progress indicator
+  p.progress.classList.remove('active');
 
   const provClass = meta.provider || 'nvidia';
-  s.meta.innerHTML = `
-    <span class="meta-badge ${esc(provClass)}">${esc(meta.provider)}</span>
-    <span class="meta-stat"><span class="meta-label">TTFT:</span> <span class="meta-value">${meta.ttft_ms.toFixed(0)}ms</span></span>
-    <span class="meta-stat"><span class="meta-label">Total:</span> <span class="meta-value">${(meta.total_ms / 1000).toFixed(1)}s</span></span>
-    <span class="meta-stat"><span class="meta-label">Tokens:</span> <span class="meta-value">~${meta.token_count}</span></span>
+  const totalSec = meta.total_ms / 1000;
+  const tokPerSec = totalSec > 0 ? (meta.token_count / totalSec).toFixed(1) : '—';
+
+  p.metrics.innerHTML = `
+    <span class="cmp-provider-badge ${esc(provClass)}">${esc(meta.provider)}</span>
+    <span class="cmp-metric">
+      <span class="cmp-metric-label">TTFT</span>
+      <span class="cmp-metric-value">${meta.ttft_ms.toFixed(0)}ms</span>
+    </span>
+    <span class="cmp-metric">
+      <span class="cmp-metric-label">Latency</span>
+      <span class="cmp-metric-value">${totalSec.toFixed(1)}s</span>
+    </span>
+    <span class="cmp-metric">
+      <span class="cmp-metric-label">Tokens</span>
+      <span class="cmp-metric-value">~${meta.token_count}</span>
+    </span>
+    <span class="cmp-metric">
+      <span class="cmp-metric-label">Tok/s</span>
+      <span class="cmp-metric-value">${tokPerSec}</span>
+    </span>
   `;
-  s.meta.classList.add('visible');
+  p.metrics.classList.add('visible');
 
   updateRunningStatus();
 }
 
-function handleError(slotId, text) {
-  if (slotId === -1) {
-    // Global error
+function handleError(paneId, text) {
+  if (paneId === -1) {
     setStatus(`Error: ${text}`);
     return;
   }
-  const s = cmp.slotEls[slotId];
-  if (!s) return;
-  cmp.runningSlots.delete(slotId);
-  s.container.classList.remove('streaming');
-  s.content.innerHTML = `<div class="slot-error">${esc(text)}</div>`;
+  const p = cmp.paneEls[paneId];
+  if (!p) return;
+  cmp.runningPanes.delete(paneId);
+  p.progress.classList.remove('active');
+  p.content.innerHTML = `
+    <div class="cmp-error">
+      <span class="material-symbols-rounded">error</span>
+      <span>${esc(text)}</span>
+    </div>
+  `;
   updateRunningStatus();
 }
 
 function handleAllDone() {
   cmp.isRunning = false;
-  cmp.runningSlots.clear();
-  el.runBtn.disabled = false;
-  el.cancelBtn.style.display = 'none';
+  cmp.runningPanes.clear();
+  $.runBtn.disabled = false;
+  $.cancelBtn.classList.remove('visible');
   setStatus('Done');
 }
 
 function updateRunningStatus() {
-  if (cmp.runningSlots.size > 0) {
-    setStatus(`Streaming... (${cmp.runningSlots.size} remaining)`);
+  if (cmp.runningPanes.size > 0) {
+    setStatus(`Streaming... (${cmp.runningPanes.size} remaining)`);
   }
 }
+
 
 /* ══════════════════════════════════════════════════════════════
    Run / Re-run / Cancel
    ══════════════════════════════════════════════════════════════ */
 function runAll() {
-  const prompt = el.prompt.value.trim();
+  const prompt = $.userPrompt.value.trim();
   if (!prompt || cmp.isRunning) return;
 
-  // Validate: every slot needs a model
-  for (const slot of cmp.slots) {
-    if (!slot.modelId) {
-      alert(`Slot ${slot.slotId + 1} has no model selected.`);
+  // Validate all panes have models selected
+  for (const pane of cmp.panes) {
+    if (!pane.modelId) {
+      setStatus(`⚠ Model ${pane.paneId + 1} has no model selected`);
       return;
     }
   }
 
-  // Clear all slots
-  for (const [id, s] of Object.entries(cmp.slotEls)) {
-    s.accText = '';
-    s.content.innerHTML = `
-      <div class="slot-loading">
-        <div class="slot-loading-dot"></div>
-        <div class="slot-loading-dot"></div>
-        <div class="slot-loading-dot"></div>
+  // Clear all pane responses
+  for (const [id, p] of Object.entries(cmp.paneEls)) {
+    p.accText = '';
+    p.content.innerHTML = `
+      <div class="cmp-loading">
+        <div class="cmp-loading-dot"></div>
+        <div class="cmp-loading-dot"></div>
+        <div class="cmp-loading-dot"></div>
       </div>`;
-    s.meta.classList.remove('visible');
-    s.meta.innerHTML = '';
+    p.metrics.classList.remove('visible');
+    p.metrics.innerHTML = '';
+    p.progress.classList.add('active');
   }
 
   cmp.isRunning = true;
-  cmp.runningSlots = new Set(cmp.slots.map(s => s.slotId));
-  el.runBtn.disabled = true;
-  el.cancelBtn.style.display = '';
-  setStatus(`Streaming... (${cmp.slots.length} models)`);
+  cmp.runningPanes = new Set(cmp.panes.map(p => p.paneId));
+  $.runBtn.disabled = true;
+  $.cancelBtn.classList.add('visible');
+  setStatus(`Streaming... (${cmp.panes.length} models)`);
+
+  const systemPrompt = $.systemPrompt.value.trim();
 
   const payload = {
     action: 'compare',
     prompt,
-    slots: cmp.slots.map(s => ({
-      slot_id: s.slotId,
-      model_id: s.modelId,
-      provider: s.provider,
-      temperature: s.temp,
-      max_tokens: s.maxTokens,
-      top_p: s.topP,
+    system_prompt: systemPrompt || undefined,
+    slots: cmp.panes.map(p => ({
+      slot_id: p.paneId,
+      model_id: p.modelId,
+      provider: p.provider,
+      temperature: p.temp,
+      max_tokens: p.maxTokens,
+      top_p: p.topP,
     })),
   };
 
   cmp.ws.send(JSON.stringify(payload));
 }
 
-function rerunSlot(slotId) {
-  const prompt = el.prompt.value.trim();
+function rerunPane(paneId) {
+  const prompt = $.userPrompt.value.trim();
   if (!prompt) return;
-  const slot = cmp.slots.find(s => s.slotId === slotId);
-  if (!slot || !slot.modelId) return;
+  const pane = cmp.panes.find(p => p.paneId === paneId);
+  if (!pane || !pane.modelId) return;
 
-  const s = cmp.slotEls[slotId];
-  if (s) {
-    s.accText = '';
-    s.content.innerHTML = `
-      <div class="slot-loading">
-        <div class="slot-loading-dot"></div>
-        <div class="slot-loading-dot"></div>
-        <div class="slot-loading-dot"></div>
+  const p = cmp.paneEls[paneId];
+  if (p) {
+    p.accText = '';
+    p.content.innerHTML = `
+      <div class="cmp-loading">
+        <div class="cmp-loading-dot"></div>
+        <div class="cmp-loading-dot"></div>
+        <div class="cmp-loading-dot"></div>
       </div>`;
-    s.meta.classList.remove('visible');
-    s.meta.innerHTML = '';
-    s.container.classList.add('streaming');
+    p.metrics.classList.remove('visible');
+    p.metrics.innerHTML = '';
+    p.progress.classList.add('active');
   }
 
-  cmp.runningSlots.add(slotId);
-  setStatus(`Re-running slot ${slotId + 1}...`);
+  cmp.runningPanes.add(paneId);
+  setStatus(`Re-running Model ${paneId + 1}...`);
+
+  const systemPrompt = $.systemPrompt.value.trim();
 
   cmp.ws.send(JSON.stringify({
     action: 'compare_rerun',
     prompt,
+    system_prompt: systemPrompt || undefined,
     slot: {
-      slot_id: slotId,
-      model_id: slot.modelId,
-      provider: slot.provider,
-      temperature: slot.temp,
-      max_tokens: slot.maxTokens,
-      top_p: slot.topP,
+      slot_id: paneId,
+      model_id: pane.modelId,
+      provider: pane.provider,
+      temperature: pane.temp,
+      max_tokens: pane.maxTokens,
+      top_p: pane.topP,
     },
   }));
 }
@@ -377,31 +485,51 @@ function cancelAll() {
   }
 }
 
-function copySlotResponse(slotId) {
-  const s = cmp.slotEls[slotId];
-  if (!s || !s.accText) return;
-  navigator.clipboard.writeText(s.accText).then(() => {
-    setStatus('Copied to clipboard');
+function copyPaneResponse(paneId) {
+  const p = cmp.paneEls[paneId];
+  if (!p || !p.accText) return;
+  navigator.clipboard.writeText(p.accText).then(() => {
+    setStatus('Copied to clipboard ✓');
     setTimeout(() => setStatus('Ready'), 1500);
   });
 }
 
+
+/* ══════════════════════════════════════════════════════════════
+   System Prompt Toggle
+   ══════════════════════════════════════════════════════════════ */
+$.systemToggle.addEventListener('click', () => {
+  $.systemBody.classList.toggle('open');
+  $.systemChevron.classList.toggle('open');
+});
+
+
+/* ══════════════════════════════════════════════════════════════
+   Auto-resize Input Textarea
+   ══════════════════════════════════════════════════════════════ */
+$.userPrompt.addEventListener('input', () => {
+  $.userPrompt.style.height = 'auto';
+  $.userPrompt.style.height = Math.min($.userPrompt.scrollHeight, 150) + 'px';
+});
+
+
 /* ══════════════════════════════════════════════════════════════
    Persistence (localStorage)
    ══════════════════════════════════════════════════════════════ */
-const STORAGE_KEY = 'panther_compare_slots';
+const STORAGE_KEY = 'panther_compare_v2';
 
 function saveState() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(
-      cmp.slots.map(s => ({
-        modelId: s.modelId,
-        provider: s.provider,
-        temp: s.temp,
-        maxTokens: s.maxTokens,
-        topP: s.topP,
-      }))
-    ));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      panes: cmp.panes.map(p => ({
+        modelId: p.modelId,
+        provider: p.provider,
+        temp: p.temp,
+        maxTokens: p.maxTokens,
+        topP: p.topP,
+      })),
+      systemPrompt: $.systemPrompt.value,
+    }));
   } catch { /* noop */ }
 }
 
@@ -412,6 +540,7 @@ function loadState() {
   } catch { /* noop */ }
   return null;
 }
+
 
 /* ══════════════════════════════════════════════════════════════
    Helpers
@@ -425,23 +554,25 @@ function esc(str) {
 }
 
 function setStatus(text) {
-  el.status.textContent = text;
+  $.statusBar.textContent = text;
 }
+
 
 /* ══════════════════════════════════════════════════════════════
    Event Listeners
    ══════════════════════════════════════════════════════════════ */
-el.runBtn.addEventListener('click', runAll);
-el.cancelBtn.addEventListener('click', cancelAll);
-el.addBtn.addEventListener('click', () => addSlot());
+$.runBtn.addEventListener('click', runAll);
+$.cancelBtn.addEventListener('click', cancelAll);
+$.addBtn.addEventListener('click', () => addPane());
 
 // Ctrl+Enter to Run All
-el.prompt.addEventListener('keydown', (e) => {
+$.userPrompt.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
     e.preventDefault();
     runAll();
   }
 });
+
 
 /* ══════════════════════════════════════════════════════════════
    Init
@@ -450,12 +581,13 @@ el.prompt.addEventListener('keydown', (e) => {
   await fetchModels();
   connectWS();
 
-  // Restore saved slot configs or create default 2 slots
+  // Restore saved state or create 2 default panes
   const saved = loadState();
-  if (saved && saved.length >= 2) {
-    saved.forEach(s => addSlot(s));
+  if (saved && saved.panes && saved.panes.length >= 2) {
+    saved.panes.forEach(p => addPane(p));
+    if (saved.systemPrompt) $.systemPrompt.value = saved.systemPrompt;
   } else {
-    addSlot({ modelId: '', provider: 'nvidia', temp: 0.7, maxTokens: 4096, topP: 1.0 });
-    addSlot({ modelId: '', provider: 'nvidia', temp: 0.7, maxTokens: 4096, topP: 1.0 });
+    addPane({ modelId: '', provider: 'nvidia', temp: 0.7, maxTokens: 4096, topP: 1.0 });
+    addPane({ modelId: '', provider: 'nvidia', temp: 0.7, maxTokens: 4096, topP: 1.0 });
   }
 })();

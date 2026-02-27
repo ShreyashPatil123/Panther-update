@@ -34,7 +34,7 @@ class TaskPreset:
             self.tooltip = f"{self.description}\nModel: {self.model}"
 
 
-# ── Best-model presets (based on Perplexity research, Feb 2026) ──────────────
+# ── Best-model presets (verified against NVIDIA NIM API, Feb 2026) ────────────
 
 TASK_PRESETS: Dict[TaskCategory, TaskPreset] = {
     TaskCategory.CHAT: TaskPreset(
@@ -42,8 +42,8 @@ TASK_PRESETS: Dict[TaskCategory, TaskPreset] = {
         emoji="💬",
         label="Chat",
         description="General conversation, Q&A, everyday assistance",
-        model="deepseek-ai/deepseek-v3.1",
-        fast_model="meta/llama-3.3-70b-instruct",
+        model="meta/llama-3.3-70b-instruct",
+        fast_model="meta/llama-3.1-8b-instruct",
         system_prompt=(
             "You are a friendly, helpful, and concise AI assistant. "
             "Provide clear answers. Use markdown formatting when helpful. "
@@ -55,8 +55,8 @@ TASK_PRESETS: Dict[TaskCategory, TaskPreset] = {
         emoji="💻",
         label="Code",
         description="Code generation, debugging, code review, refactoring",
-        model="qwen/qwen3-coder-480b-a35b-instruct",
-        fast_model="mistralai/devstral-2-123b-instruct-2512",
+        model="qwen/qwen2.5-coder-32b-instruct",
+        fast_model="meta/llama-3.3-70b-instruct",
         system_prompt=(
             "You are an expert software engineer. Write clean, efficient, "
             "well-documented code. Always include error handling. "
@@ -69,8 +69,8 @@ TASK_PRESETS: Dict[TaskCategory, TaskPreset] = {
         emoji="🧠",
         label="Reasoning",
         description="Math, logic, chain-of-thought, analytical problems",
-        model="nvidia/llama-3.1-nemotron-ultra-253b-v1",
-        fast_model="qwen/qwq-32b",
+        model="qwen/qwq-32b",
+        fast_model="meta/llama-3.3-70b-instruct",
         system_prompt=(
             "You are a rigorous analytical thinker. Break down problems "
             "step by step. Show your reasoning clearly. Verify your answers. "
@@ -82,8 +82,8 @@ TASK_PRESETS: Dict[TaskCategory, TaskPreset] = {
         emoji="👁️",
         label="Vision",
         description="Image analysis, screenshots, diagrams, visual Q&A",
-        model="meta/llama-3.2-90b-vision-instruct",
-        fast_model="microsoft/phi-4-multimodal-instruct",
+        model="microsoft/phi-4-multimodal-instruct",
+        fast_model="meta/llama-3.2-11b-vision-instruct",
         system_prompt=(
             "You are a visual analysis expert. Describe what you see in detail. "
             "Identify text, objects, layouts, and relationships in images. "
@@ -95,8 +95,8 @@ TASK_PRESETS: Dict[TaskCategory, TaskPreset] = {
         emoji="✍️",
         label="Creative",
         description="Stories, poetry, marketing copy, creative writing",
-        model="qwen/qwen3-235b-a22b",
-        fast_model="meta/llama-3.3-70b-instruct",
+        model="meta/llama-3.3-70b-instruct",
+        fast_model="meta/llama-3.1-8b-instruct",
         system_prompt=(
             "You are a talented creative writer with a vivid imagination. "
             "Write engaging, original content with strong voice and style. "
@@ -109,8 +109,8 @@ TASK_PRESETS: Dict[TaskCategory, TaskPreset] = {
         emoji="📄",
         label="Document",
         description="Text extraction, summarization, document analysis",
-        model="mistralai/mistral-large-3-675b-instruct-2512",
-        fast_model="mistralai/mistral-medium-3-instruct",
+        model="meta/llama-3.1-70b-instruct",
+        fast_model="mistralai/mixtral-8x7b-instruct-v0.1",
         system_prompt=(
             "You are a document analysis specialist. Extract key information "
             "accurately. Summarize concisely while preserving critical details. "
@@ -123,8 +123,8 @@ TASK_PRESETS: Dict[TaskCategory, TaskPreset] = {
         emoji="🤖",
         label="Agentic",
         description="Multi-step planning, tool use, complex task execution",
-        model="moonshotai/kimi-k2-instruct-0905",
-        fast_model="nvidia/llama-3.3-nemotron-super-49b-v1.5",
+        model="nvidia/llama-3.3-nemotron-super-49b-v1",
+        fast_model="meta/llama-3.3-70b-instruct",
         system_prompt=(
             "You are an autonomous AI agent skilled at breaking complex tasks "
             "into actionable steps. Plan before executing. Be precise with "
@@ -137,8 +137,8 @@ TASK_PRESETS: Dict[TaskCategory, TaskPreset] = {
         emoji="🌐",
         label="Translate",
         description="Multilingual translation between languages",
-        model="nvidia/riva-translate-4b-instruct-v1.1",
-        fast_model="nvidia/riva-translate-4b-instruct-v1.1",
+        model="meta/llama-3.3-70b-instruct",
+        fast_model="meta/llama-3.1-8b-instruct",
         system_prompt=(
             "You are a professional translator. Translate accurately while "
             "preserving meaning, tone, and cultural nuance. If the source "
@@ -152,7 +152,7 @@ TASK_PRESETS: Dict[TaskCategory, TaskPreset] = {
         label="Safety",
         description="Content moderation, safety checks, policy compliance",
         model="meta/llama-guard-4-12b",
-        fast_model="nvidia/nemotron-content-safety-reasoning-4b",
+        fast_model="nvidia/llama-3.1-nemotron-safety-guard-8b-v3",
         system_prompt=(
             "You are a content safety analyst. Evaluate content against "
             "safety policies. Identify potential risks including: violence, "

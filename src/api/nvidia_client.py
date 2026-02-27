@@ -7,8 +7,10 @@ from loguru import logger
 
 # Status codes that warrant an automatic retry
 _RETRYABLE_CODES = {429, 503, 502, 504}
-# Status codes that should never be retried
-_NO_RETRY_CODES = {401, 403, 400, 404}
+# Status codes that should never be retried (400 excluded — handled by smart fallback)
+_NO_RETRY_CODES = {401, 403, 404}
+# Safe default model guaranteed to work on NVIDIA NIM
+_FALLBACK_MODEL = "meta/llama-3.1-70b-instruct"
 
 
 class NVIDIAClient:
@@ -69,6 +71,10 @@ class NVIDIAClient:
         # Fall back to default model if caller passed empty/None
         model = model or "meta/llama-3.1-8b-instruct"
 
+        # Sanitize parameters to valid ranges
+        temperature = max(0.0, min(1.0, temperature))
+        top_p = max(0.0, min(1.0, top_p))
+
         payload = {
             "model": model,
             "messages": messages,
@@ -81,6 +87,7 @@ class NVIDIAClient:
         logger.debug(f"Sending request to {model} (stream={stream})")
 
         last_error: Optional[Exception] = None
+        _used_fallback = False
         for attempt in range(self.max_retries):
             try:
                 if stream:
@@ -170,6 +177,17 @@ class NVIDIAClient:
                     return  # success
 
             except httpx.HTTPStatusError as e:
+                # Smart fallback: if 400 and we haven't already fallen back,
+                # swap to the guaranteed-safe model and retry immediately.
+                if e.response.status_code == 400 and not _used_fallback:
+                    logger.warning(
+                        f"Model {payload['model']} failed with 400. "
+                        f"Falling back to default."
+                    )
+                    payload["model"] = _FALLBACK_MODEL
+                    _used_fallback = True
+                    last_error = e
+                    continue  # retry immediately, no backoff
                 if e.response.status_code in _NO_RETRY_CODES:
                     logger.error(f"HTTP error {e.response.status_code}: {e.response.text}")
                     raise

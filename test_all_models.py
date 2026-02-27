@@ -62,6 +62,28 @@ async def discover_gemini(_client: httpx.AsyncClient) -> list[str]:
     return sorted(models)
 
 
+# ── Error categorization ──────────────────────────────────────────────────────
+
+def _categorize_status(code: int) -> str:
+    """Return a human-readable category for an HTTP status code."""
+    if code == 200:
+        return "OK"
+    elif code == 401:
+        return "INVALID_KEY"
+    elif code == 403:
+        return "FORBIDDEN"
+    elif code == 404:
+        return "NOT_FOUND"
+    elif code == 429:
+        return "RATE_LIMITED"
+    elif code in (502, 503, 504):
+        return "SERVICE_DOWN"
+    elif code == 400:
+        return "BAD_REQUEST"
+    else:
+        return f"HTTP_{code}"
+
+
 # ── Test a single model ───────────────────────────────────────────────────────
 
 async def test_model(
@@ -97,6 +119,7 @@ async def test_model(
             preview = content.strip()[:50].replace("\n", " ")
             return {
                 "model": model_id, "provider": provider, "status": "OK",
+                "category": "OK",
                 "code": 200, "latency_ms": latency, "response": preview,
             }
         else:
@@ -108,19 +131,23 @@ async def test_model(
                 detail = resp.text[:100]
             return {
                 "model": model_id, "provider": provider,
-                "status": f"HTTP {resp.status_code}", "code": resp.status_code,
+                "status": f"HTTP {resp.status_code}",
+                "category": _categorize_status(resp.status_code),
+                "code": resp.status_code,
                 "latency_ms": latency, "response": str(detail)[:80],
             }
     except httpx.TimeoutException:
         latency = round((time.monotonic() - start) * 1000)
         return {
             "model": model_id, "provider": provider, "status": "TIMEOUT",
+            "category": "TIMEOUT",
             "code": 0, "latency_ms": latency, "response": "Timed out",
         }
     except Exception as e:
         latency = round((time.monotonic() - start) * 1000)
         return {
             "model": model_id, "provider": provider, "status": "ERROR",
+            "category": "ERROR",
             "code": 0, "latency_ms": latency, "response": str(e)[:80],
         }
 
@@ -217,7 +244,9 @@ async def main():
             discover_gemini,
             "https://generativelanguage.googleapis.com/v1beta/openai",
             {
+                # Gemini OpenAI-compat endpoint uses x-goog-api-key, not Bearer
                 "Authorization": f"Bearer {GOOGLE_API_KEY}",
+                "x-goog-api-key": GOOGLE_API_KEY,
                 "Content-Type": "application/json",
             },
         )
@@ -241,9 +270,14 @@ async def main():
                 print(f"      {r['model']} ({r['latency_ms']}ms)")
 
         if data["failed"]:
-            print(f"\n    Failed models ({f}):")
+            # Group failures by category
+            from collections import Counter
+            cats = Counter(r.get('category', 'UNKNOWN') for r in data["failed"])
+            cat_summary = ', '.join(f"{v} {k}" for k, v in cats.most_common())
+            print(f"\n    Failed models ({f}): [{cat_summary}]")
             for r in data["failed"]:
-                print(f"      {r['model']}: {r['status']} -- {r['response']}")
+                cat = r.get('category', '')
+                print(f"      [{cat:12s}] {r['model']}: {r['status']} -- {r['response']}")
 
     # ── Copy-paste ready lists ────────────────────────────────────────────
     for prov, data in results.items():
