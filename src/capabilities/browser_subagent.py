@@ -375,6 +375,30 @@ class BrowserSubAgent:
                 yield {"type": "error", "message": f"Google fallback failed: {e}"}
                 return
 
+        # ── Early exit for simple navigation tasks ────────────────────────
+        # If we already navigated to a URL and there's no further action
+        # needed (no search query, and the intent is just "open/visit X"),
+        # return immediately. This prevents the Gemini loop from
+        # re-interpreting "open netflix" as a Google search.
+        if url and not query:
+            # Check if this is a simple navigation task (no complex actions)
+            _simple_nav = re.search(
+                r'^\s*(?:open|go\s+to|visit|navigate\s+to|launch|check)\s+',
+                task, re.IGNORECASE
+            )
+            if _simple_nav:
+                text = await self._extract_text()
+                yield {
+                    "type": "result",
+                    "message": "✅ Navigation complete",
+                    "data": {
+                        "result": text[:3000] if text else f"Opened {self.page.url}",
+                        "final_url": self.page.url,
+                        "steps_taken": 1,
+                    },
+                }
+                return
+
         # ── Main agent loop ──────────────────────────────────────────────
         retries = 0
 
