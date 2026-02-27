@@ -22,6 +22,7 @@ from typing import AsyncGenerator, Dict, List, Optional, Tuple
 
 from loguru import logger
 import aiohttp
+from src.utils.brand_normalizer import normalize_brand
 
 try:
     import google.generativeai as genai
@@ -267,6 +268,30 @@ async def _try_domain_heuristic(brand: str) -> Optional[str]:
     return None
 
 
+def _sanitize_url(url: str) -> str:
+    """Strip Google redirect wrappers and clean resolved URLs.
+    
+    Google often wraps URLs like: google.com/url?q=https://open.spotify.com/
+    This extracts the actual destination URL.
+    """
+    if not url:
+        return url
+    import urllib.parse
+    # Unwrap Google redirect: google.com/url?q=<actual_url>
+    if "google.com/url" in url:
+        parsed = urllib.parse.urlparse(url)
+        params = urllib.parse.parse_qs(parsed.query)
+        if "q" in params and params["q"][0].startswith("http"):
+            unwrapped = params["q"][0]
+            logger.info(f"[URL-Sanitize] Unwrapped Google redirect: {url} → {unwrapped}")
+            return unwrapped
+        if "url" in params and params["url"][0].startswith("http"):
+            unwrapped = params["url"][0]
+            logger.info(f"[URL-Sanitize] Unwrapped Google redirect: {url} → {unwrapped}")
+            return unwrapped
+    return url
+
+
 async def _resolve_url_via_llm_chain(
     task: str, nvidia_key: Optional[str], google_model, pplx_key: Optional[str]
 ) -> Optional[str]:
@@ -415,9 +440,9 @@ async def _resolve_url_via_llm_chain(
                     ssl=False,
                     headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
                 ) as resp:
-                    final_url = str(resp.url)
-                    # Only use if it redirected away from Google
-                    if "google.com/search" not in final_url and final_url.startswith("http"):
+                    final_url = _sanitize_url(str(resp.url))
+                    # Only use if it redirected away from Google entirely
+                    if "google.com" not in final_url and final_url.startswith("http"):
                         logger.info(f"[URL-Resolver] Google Lucky resolved: '{brand}' -> {final_url}")
                         return final_url
         except Exception as e:
@@ -498,23 +523,42 @@ class BrowserSubAgent:
         
         # If no explicit URL is found but the user wants to go to an official website or we have a query, run the LLM fallback chain
         if not url and (re.search(r'\b(website|site|page|open|go\s+to|visit)\b', task.lower()) or " on " in task.lower()):
-            yield {"type": "action", "message": f"🌐 Resolving official website..."}
-            
-            nvidia_key = os.getenv("NVIDIA_API_KEY")
-            pplx_key = os.getenv("PERPLEXITY_API_KEY")
-            
-            resolved_url = await _resolve_url_via_llm_chain(
-                task=task,
-                nvidia_key=nvidia_key,
-                google_model=self.model,
-                pplx_key=pplx_key
-            )
-            
-            if resolved_url:
-                url = resolved_url
-                yield {"type": "action", "message": f"✨ Resolved to: {url}"}
+            # ── Normalize the brand name (fix typos/spacing) ──────────
+            raw_brand = _extract_brand_name(task)
+            if raw_brand:
+                normalized = await normalize_brand(raw_brand, self.model)
+                if normalized and normalized != raw_brand.lower():
+                    yield {"type": "action", "message": f"✏️ Normalized: '{raw_brand}' → '{normalized}'"}
+                    # Re-check SITE_MAP with normalized name
+                    if normalized in SITE_MAP:
+                        url = SITE_MAP[normalized]
+                        yield {"type": "action", "message": f"✨ Matched known site: {url}"}
+                    else:
+                        # Build a normalized task for the resolution chain
+                        task_for_resolve = re.sub(re.escape(raw_brand), normalized, task, flags=re.IGNORECASE)
+                else:
+                    task_for_resolve = task
+            else:
+                task_for_resolve = task
+
+            if not url:
+                yield {"type": "action", "message": f"🌐 Resolving official website..."}
+                nvidia_key = os.getenv("NVIDIA_API_KEY")
+                pplx_key = os.getenv("PERPLEXITY_API_KEY")
+                
+                resolved_url = await _resolve_url_via_llm_chain(
+                    task=task_for_resolve,
+                    nvidia_key=nvidia_key,
+                    google_model=self.model,
+                    pplx_key=pplx_key
+                )
+                
+                if resolved_url:
+                    url = resolved_url
+                    yield {"type": "action", "message": f"✨ Resolved to: {url}"}
 
         if url:
+            url = _sanitize_url(url)  # Strip Google redirect wrappers
             yield {"type": "action", "message": f"🔗 Navigating to {url}"}
             try:
                 await self._navigate(url)
