@@ -1,6 +1,6 @@
 import httpx
 
-API_KEY = "b4eff512ca714420ae7a62baf9333d70"
+API_KEY = ""
 
 def test_api():
     url = f"https://api.twelvedata.com/quote?symbol=BTC/USD,XAU/USD&apikey={API_KEY}"

@@ -17,7 +17,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 # ── Twelve Data configuration ────────────────────────────────────────────────
-TWELVE_DATA_API_KEY = "b4eff512ca714420ae7a62baf9333d70"
+TWELVE_DATA_API_KEY = ""
 TWELVE_DATA_BASE   = "https://api.twelvedata.com"
 
 # ── Rate-limit constants (free plan) ─────────────────────────────────────────
