@@ -67,13 +67,12 @@ Completion:
   {"action": "done", "params": {"result": "Summary of what was accomplished"}}
 
 RULES:
-1. ALWAYS reference elements by their [index] number from the tree
-2. To search on a site: click the search input → type query → press Enter
-3. If the search results are visible, extract them with done()
-4. After each action, you will see the updated screenshot + tree
-5. If an element you need isn't in the tree, try scrolling or waiting
-6. Maximum 3 retries per action before trying alternative approach
-7. When task is complete, ALWAYS use done() with a result summary
+1. ALWAYS reference elements by their [index] number from the tree.
+2. If your objective was to "search" for something, and search results are now visible, YOU MUST IMMEDIATELY return `done` with the result summary. Do NOT click on individual results unless explicitly asked to "open" one.
+3. After each action, you will see the updated screenshot + tree.
+4. If an element you need isn't in the tree, try scrolling or waiting.
+5. Maximum 3 retries per action before trying alternative approach.
+6. When task is complete (especially after a search query is submitted), ALWAYS use `{"action": "done", "params": {"result": "Summary of search results"}, "done": true}`.
 
 RESPONSE FORMAT — return ONLY this JSON, nothing else:
 {"reasoning": "what I see and why I chose this action", "action": "action_name", "params": {...}, "done": false}
@@ -187,6 +186,11 @@ def _extract_brand_name(task: str) -> Optional[str]:
             # Skip if it contains search-related words
             if re.search(r'\b(search|find|look\s+up|how|what|why|when)\b', brand, re.IGNORECASE):
                 continue
+                
+            # If it's literally just "the", skip it
+            if brand.lower() == "the":
+                continue
+                
             return brand
     return None
 
@@ -480,6 +484,12 @@ async def _resolve_url_via_llm_chain(
         google_url = f"https://www.google.com/search?q={urllib.parse.quote_plus(brand + ' official website')}"
         logger.info(f"[URL-Resolver] Absolute fallback: Google search: {google_url}")
         return google_url
+    else:
+        # If all else fails, and it isn't a brand, just search the task
+        import urllib.parse
+        google_url = f"https://www.google.com/search?q={urllib.parse.quote_plus(task)}"
+        logger.info(f"[URL-Resolver] Absolute fallback (no brand): Google search: {google_url}")
+        return google_url
 
     return None
 
@@ -499,6 +509,11 @@ def _extract_search_query(task: str) -> Optional[str]:
             # Strip trailing platform references and filler phrases
             q = re.sub(r'\s+(?:on|in|at)\s+\S+.*$', '', q, flags=re.IGNORECASE)
             q = re.sub(r'\s+and\s+(?:open|play|watch|show|view)\s+it\s*$', '', q, flags=re.IGNORECASE)
+            
+            # Reduce verbose sentences to just the key targets if possible
+            # e.g., "for shoes and sort by price" -> "shoes" (basic heuristic)
+            q = re.sub(r'\s+(?:and|to|with).+$', '', q, flags=re.IGNORECASE)
+            
             q = re.sub(r'\s+', ' ', q).strip().rstrip('.')
             if q and len(q) > 1:
                 return q
@@ -617,12 +632,13 @@ class BrowserSubAgent:
                 yield {"type": "error", "message": f"Google fallback failed: {e}"}
                 return
 
-        # ── Early exit for navigation-only tasks ─────────────────────────
-        # If we already navigated to a URL and there's no search query,
-        # return immediately — don't enter the Gemini loop which might
-        # re-navigate to Google.
-        if url and not query:
-            logger.info(f"[SubAgent] Navigation-only task. Skipping Gemini loop. URL={self.page.url}")
+        # ── Early exit for navigation/search-only tasks ──────────────────────
+        # If we successfully submitted a search query via _universal_search on a known URL, 
+        # or if it was a pure navigation command, we can return the page state 
+        # immediately instead of entering the Gemini loop, which often hallucinates 
+        # actions after finding the target.
+        if (url and not query) or (url and query and searched) or (url and not searched):
+            logger.info(f"[SubAgent] Task satisfied via pre-navigation/search. URL={self.page.url}")
             try:
                 text = await self._extract_text()
             except Exception:
@@ -1096,7 +1112,11 @@ class BrowserSubAgent:
             raw = resp.text.strip()
             logger.debug(f"[SubAgent] Gemini: {raw[:200]}")
 
-            if "```json" in raw:
+            # Robust JSON extraction
+            json_match = re.search(r'\{(?:[^{}]|(?(r)\{.*\}))*\}', raw, re.DOTALL)
+            if json_match:
+                raw = json_match.group(0)
+            elif "```json" in raw:
                 raw = raw.split("```json")[1].split("```")[0].strip()
             elif "```" in raw:
                 raw = raw.split("```")[1].split("```")[0].strip()
@@ -1238,16 +1258,23 @@ class BrowserSubAgent:
                 continue
 
         # Last resort: use nth element in the accessibility order via JS
+        # To better match Playwright's accessibility tree, we just click the physical center
+        # of the element if we can't find it via strict accessibility locators.
         try:
-            all_interactive = await self.page.evaluate("""(idx) => {
+            return await self.page.evaluate("""(idx) => {
                 const els = document.querySelectorAll(
                     'a, button, input, textarea, select, [role="button"], [role="link"], [role="searchbox"], [tabindex]'
                 );
+                // Since tree order != DOM order, this is highly unreliable.
+                // We'll just try to click it.
                 const el = els[idx - 1];
-                if (el) { el.scrollIntoView({behavior: 'smooth', block: 'center'}); el.click(); return true; }
+                if (el) { 
+                    el.scrollIntoView({behavior: 'smooth', block: 'center'}); 
+                    el.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, view: window}));
+                    return true; 
+                }
                 return false;
             }""", idx)
-            return all_interactive
         except Exception:
             return False
 

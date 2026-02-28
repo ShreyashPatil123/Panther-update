@@ -352,6 +352,7 @@ class DesktopBrowserController:
         - Handles all Unicode characters
         - Much more reliable than ctypes clipboard
         """
+        text = text.strip()
         try:
             # Use clip.exe to set clipboard — synchronous and reliable
             process = subprocess.run(

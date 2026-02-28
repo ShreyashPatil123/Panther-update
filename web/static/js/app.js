@@ -28,6 +28,8 @@ const state = {
   activeCategory: "chat",
   lastUserMsg: "",
   userScrolledUp: false,
+  selectionMode: false,
+  selectedSessions: new Set(),
 };
 
 /* ── DOM refs ───────────────────────────────────────────── */
@@ -46,6 +48,12 @@ const el = {
   attachPills: $("attachmentPills"),
   historyList: $("historyList"),
   historyEmpty: $("historyEmpty"),
+  editHistoryBtn: $("editHistoryBtn"),
+  bulkToolbar: $("bulkToolbar"),
+  selectAllHistory: $("selectAllHistory"),
+  bulkCount: $("bulkCount"),
+  bulkDeleteBtn: $("bulkDeleteBtn"),
+  cancelEditHistoryBtn: $("cancelEditHistoryBtn"),
   newChatBtn: $("newChatBtn"),
   settingsBtn: $("settingsBtn"),
   settingsOverlay: $("settingsOverlay"),
@@ -122,8 +130,16 @@ function handleServerMessage(msg) {
       state.sessionId = msg.session_id;
       state.sessions = msg.sessions || [];
       renderHistory();
-      if (msg.history && msg.history.length > 0) {
-        restoreHistory(msg.history);
+      if (msg.history) {
+        if (msg.history.length > 0) {
+          restoreHistory(msg.history);
+        } else {
+          el.messages.innerHTML = "";
+          el.hero.style.display = "flex";
+          el.chatArea.style.display = "none";
+          state.currentAiBubble = null;
+          state.currentTurn = null;
+        }
       }
       break;
 
@@ -526,13 +542,31 @@ function renderHistory() {
     if (sess.id === state.sessionId) btn.classList.add("active");
 
     btn.innerHTML = `
+      <input type="checkbox" class="history-checkbox" data-sid="${sess.id}" ${state.selectedSessions.has(sess.id) ? "checked" : ""}>
       <span class="history-item-text" title="${escapeHtml(title)}">${escapeHtml(title.length > 32 ? title.slice(0, 30) + "…" : title)}</span>
       <button class="history-del-btn" data-sid="${sess.id}" title="Delete">✕</button>`;
 
     btn.addEventListener("click", (e) => {
+      // If clicking delete button
       if (e.target.closest(".history-del-btn")) return;
-      switchSession(sess.id);
+      
+      // If clicking checkbox directly, let change event handle it or toggle here
+      if (e.target.classList.contains("history-checkbox")) {
+        const checked = e.target.checked;
+        toggleSessionSelection(sess.id, checked);
+        return;
+      }
+      
+      if (state.selectionMode) {
+        // Toggle selection by clicking anywhere on the item
+        const cb = btn.querySelector(".history-checkbox");
+        cb.checked = !cb.checked;
+        toggleSessionSelection(sess.id, cb.checked);
+      } else {
+        switchSession(sess.id);
+      }
     });
+
     btn.querySelector(".history-del-btn").addEventListener("click", (e) => {
       e.stopPropagation();
       deleteSession(sess.id);
@@ -540,6 +574,47 @@ function renderHistory() {
 
     el.historyList.appendChild(btn);
   }
+  
+  updateBulkToolbarUI();
+}
+
+function toggleSessionSelection(sid, isSelected) {
+  if (isSelected) {
+    state.selectedSessions.add(sid);
+  } else {
+    state.selectedSessions.delete(sid);
+  }
+  updateBulkToolbarUI();
+}
+
+function updateBulkToolbarUI() {
+  if (!state.selectionMode) return;
+  const count = state.selectedSessions.size;
+  const total = state.sessions.length;
+  el.bulkCount.textContent = count > 0 ? `${count} selected` : "";
+  el.bulkDeleteBtn.disabled = count === 0;
+  el.selectAllHistory.checked = count > 0 && count === total;
+  
+  // Also ensure UI checkboxes match state correctly (in case DOM changed)
+  document.querySelectorAll(".history-checkbox").forEach(cb => {
+    cb.checked = state.selectedSessions.has(cb.dataset.sid);
+  });
+}
+
+function toggleSelectionMode() {
+  state.selectionMode = !state.selectionMode;
+  state.selectedSessions.clear();
+  
+  if (state.selectionMode) {
+    document.body.classList.add("selection-mode");
+    el.bulkToolbar.style.display = "flex";
+    el.editHistoryBtn.style.color = "var(--accent)";
+  } else {
+    document.body.classList.remove("selection-mode");
+    el.bulkToolbar.style.display = "none";
+    el.editHistoryBtn.style.color = "var(--text-secondary)";
+  }
+  renderHistory();
 }
 
 function highlightActiveSession() {
@@ -557,20 +632,37 @@ function switchSession(sid) {
 
 function deleteSession(sid) {
   state.sessionToDelete = sid;
+  state.isBulkDelete = false;
   el.deleteConfirmOverlay.style.display = "flex";
 }
 
+function deleteSelectedSessions() {
+  if (state.selectedSessions.size === 0) return;
+  state.isBulkDelete = true;
+  el.deleteConfirmOverlay.style.display = "flex";
+  el.deleteConfirmOverlay.querySelector("p").innerText = `Are you sure you want to delete ${state.selectedSessions.size} conversation(s)? This action cannot be undone.`;
+}
+
 function confirmDeleteSession() {
-  if (state.sessionToDelete) {
+  if (state.isBulkDelete && state.selectedSessions.size > 0) {
+    wsSend({ action: "bulk_delete_sessions", session_ids: Array.from(state.selectedSessions) });
+    state.selectedSessions.clear();
+    toggleSelectionMode(); // Exit mode after bulk delete
+  } else if (state.sessionToDelete) {
     wsSend({ action: "delete_session", session_id: state.sessionToDelete });
     state.sessionToDelete = null;
-    el.deleteConfirmOverlay.style.display = "none";
   }
+  el.deleteConfirmOverlay.style.display = "none";
+  // Reset prompt text
+  el.deleteConfirmOverlay.querySelector("p").innerText = "Are you sure you want to delete this conversation? This action cannot be undone.";
 }
 
 function cancelDeleteSession() {
   state.sessionToDelete = null;
+  state.isBulkDelete = false;
   el.deleteConfirmOverlay.style.display = "none";
+  // Reset prompt text
+  el.deleteConfirmOverlay.querySelector("p").innerText = "Are you sure you want to delete this conversation? This action cannot be undone.";
 }
 
 function newChat() {
@@ -920,6 +1012,22 @@ document.querySelectorAll(".chip").forEach((chip) => {
 
 // New chat
 el.newChatBtn.addEventListener("click", newChat);
+
+// Bulk Edit History
+el.editHistoryBtn.addEventListener("click", toggleSelectionMode);
+el.cancelEditHistoryBtn.addEventListener("click", toggleSelectionMode);
+
+el.selectAllHistory.addEventListener("change", (e) => {
+  const isChecked = e.target.checked;
+  if (isChecked) {
+    state.sessions.forEach(sess => state.selectedSessions.add(sess.id));
+  } else {
+    state.selectedSessions.clear();
+  }
+  updateBulkToolbarUI();
+});
+
+el.bulkDeleteBtn.addEventListener("click", deleteSelectedSessions);
 
 // Attach
 el.attachBtn.addEventListener("click", () => el.fileInput.click());

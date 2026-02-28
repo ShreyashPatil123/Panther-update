@@ -65,7 +65,7 @@ def _fuzzy_match_known_sites(brand: str, score_cutoff: int = 80) -> Optional[str
         return None
 
     try:
-        from src.capabilities.browser_subagent import SITE_MAP
+        from src.capabilities.desktop_browser_agent import SITE_MAP
         known_sites = list(SITE_MAP.keys())
     except ImportError:
         return None

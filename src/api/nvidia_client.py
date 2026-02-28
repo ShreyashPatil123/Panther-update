@@ -319,7 +319,6 @@ class NVIDIAClient:
             # --- Meta Llama ---
             "meta/llama-3.1-8b-instruct",
             "meta/llama-3.1-70b-instruct",
-            "meta/llama-3.1-405b-instruct",
             "meta/llama-3.2-1b-instruct",
             "meta/llama-3.2-3b-instruct",
             "meta/llama-3.2-11b-vision-instruct",
@@ -353,7 +352,6 @@ class NVIDIAClient:
             "nvidia/llama-3.1-nemoguard-8b-content-safety",
             "nvidia/llama-3.1-nemoguard-8b-topic-control",
             "nvidia/llama-3.1-nemotron-70b-reward",
-            "nvidia/llama-3.1-nemotron-nano-4b-v1.1",
             "nvidia/llama-3.1-nemotron-nano-8b-v1",
             "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
             "nvidia/llama-3.1-nemotron-safety-guard-8b-v3",
@@ -371,8 +369,6 @@ class NVIDIAClient:
             "nvidia/usdcode-llama-3.1-70b-instruct",
             # --- Deepseek ---
             "deepseek-ai/deepseek-r1-distill-llama-8b",
-            "deepseek-ai/deepseek-r1-distill-qwen-14b",
-            "deepseek-ai/deepseek-v3.1",
             # --- Qwen ---
             "qwen/qwen2-7b-instruct",
             "qwen/qwen2.5-7b-instruct",
@@ -388,17 +384,12 @@ class NVIDIAClient:
             "microsoft/phi-3-small-8k-instruct",
             "microsoft/phi-3.5-mini-instruct",
             "microsoft/phi-3.5-vision-instruct",
-            # --- MiniMax ---
-            "minimaxai/minimax-m2.1",
             # --- AI21 Labs ---
             "ai21labs/jamba-1.5-mini-instruct",
             # --- Abacus AI ---
             "abacusai/dracarys-llama-3.1-70b-instruct",
             # --- IBM ---
-            "ibm/granite-3.3-8b-instruct",
             "ibm/granite-guardian-3.0-8b",
-            # --- Z-AI (Zhipu) ---
-            "z-ai/glm4.7",
             # --- Tiiuae ---
             "tiiuae/falcon3-7b-instruct",
             # --- Upstage ---

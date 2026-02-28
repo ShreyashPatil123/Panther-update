@@ -60,7 +60,31 @@
       </button>
 
       <!-- History -->
-      <div class="sidebar-section-label" id="historyLabel">History</div>
+      <div class="sidebar-section-header">
+        <div class="sidebar-section-label" id="historyLabel">History</div>
+        <button class="icon-btn edit-history-btn" id="editHistoryBtn" title="Bulk Select">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 11 12 14 22 4"></polyline>
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+          </svg>
+        </button>
+      </div>
+      <div class="bulk-toolbar" id="bulkToolbar" style="display: none;">
+        <label class="bulk-select-all">
+          <input type="checkbox" id="selectAllHistory">
+          <span>All</span>
+        </label>
+        <span class="bulk-count" id="bulkCount"></span>
+        <div class="bulk-actions">
+          <button class="icon-btn" id="bulkDeleteBtn" title="Delete Selected" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
+          <button class="icon-btn" id="cancelEditHistoryBtn" title="Cancel">✕</button>
+        </div>
+      </div>
       <div class="history-list" id="historyList" role="list" aria-labelledby="historyLabel">
         <div class="history-empty" id="historyEmpty">No conversations yet</div>
       </div>

@@ -173,7 +173,6 @@ def _fallback_nvidia_models() -> List[Dict[str, Any]]:
         # Top picks — one from each family (verified 2026-02-23)
         "meta/llama-3.3-70b-instruct",
         "meta/llama-3.1-8b-instruct",
-        "meta/llama-3.1-405b-instruct",
         "meta/llama-3.2-11b-vision-instruct",
         "mistralai/mistral-large-3-675b-instruct-2512",
         "mistralai/mistral-7b-instruct-v0.3",
@@ -182,8 +181,6 @@ def _fallback_nvidia_models() -> List[Dict[str, Any]]:
         "google/gemma-2-9b-it",
         "nvidia/llama-3.3-nemotron-super-49b-v1",
         "nvidia/llama-3.1-nemotron-nano-8b-v1",
-        "deepseek-ai/deepseek-r1-distill-qwen-14b",
-        "deepseek-ai/deepseek-v3.1",
         "qwen/qwen3-235b-a22b",
         "qwen/qwq-32b",
         "microsoft/phi-4-mini-flash-reasoning",

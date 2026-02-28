@@ -1,0 +1,30 @@
+[
+  [
+    "meta/llama-3.1-405b-instruct",
+    "HTTP 404 - {\"status\":404,\"title\":\"Not Found\",\"detail\":\"Function id '7c79b6d5-3552-41e7-8574-c4d431548d8e' versi"
+  ],
+  [
+    "nvidia/llama-3.1-nemotron-nano-4b-v1.1",
+    "HTTPSConnectionPool(host='integrate.api.nvidia.com', port=443): Read timed out. (read timeout=15)"
+  ],
+  [
+    "deepseek-ai/deepseek-r1-distill-qwen-14b",
+    "HTTPSConnectionPool(host='integrate.api.nvidia.com', port=443): Read timed out. (read timeout=15)"
+  ],
+  [
+    "deepseek-ai/deepseek-v3.1",
+    "HTTPSConnectionPool(host='integrate.api.nvidia.com', port=443): Read timed out. (read timeout=15)"
+  ],
+  [
+    "minimaxai/minimax-m2.1",
+    "HTTPSConnectionPool(host='integrate.api.nvidia.com', port=443): Read timed out. (read timeout=15)"
+  ],
+  [
+    "ibm/granite-3.3-8b-instruct",
+    "HTTPSConnectionPool(host='integrate.api.nvidia.com', port=443): Read timed out. (read timeout=15)"
+  ],
+  [
+    "z-ai/glm4.7",
+    "HTTPSConnectionPool(host='integrate.api.nvidia.com', port=443): Read timed out. (read timeout=15)"
+  ]
+]

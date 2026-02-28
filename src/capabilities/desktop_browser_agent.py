@@ -43,7 +43,10 @@ SITE_MAP = {
     "wikipedia": "https://www.wikipedia.org",
     "stackoverflow": "https://stackoverflow.com",
     "bing": "https://www.bing.com",
-    "spotify": "https://www.spotify.com",
+    "spotify": "https://open.spotify.com",
+    "yt": "https://www.youtube.com",
+    "fb": "https://www.facebook.com",
+    "ig": "https://www.instagram.com",
     "netflix": "https://www.netflix.com",
     "ebay": "https://www.ebay.com",
     "pinterest": "https://www.pinterest.com",
@@ -98,15 +101,15 @@ RULES:
 2. To search on a site: click the search box → type query → press Enter
 3. To navigate: use new_tab_navigate to open in a new tab
 4. Provide exact x,y coordinates based on the screenshot
-5. When the task is complete, use done() with a clear result summary
 6. If you can't find an element, try scrolling down first
+7. CRITICAL: If asked to 'open' a brand, acronym, or organization and you DO NOT know their exact official URL (like .gov.in, .org, etc.), DO NOT guess a .com domain. Instead, use the 'search' action to Google the name and click the official link in the results.
 
 RESPONSE FORMAT — return ONLY this JSON:
 {"reasoning": "what I see and what I will do", "action": "action_name", "params": {...}, "done": false}
 """
 
 
-def _extract_url(task: str) -> Optional[str]:
+async def _extract_url(task: str, gemini_model=None) -> Optional[str]:
     """Extract URL from task text."""
     m = re.search(r'https?://[^\s,\'"]+', task)
     if m:
@@ -124,24 +127,49 @@ def _extract_url(task: str) -> Optional[str]:
     for name, url in SITE_MAP.items():
         if re.search(rf'\b{re.escape(name)}\b', task_lower):
             return url
+            
+    # Try normalizing the task to see if a brand matches
+    from src.utils.brand_normalizer import normalize_brand
+    
+    query = _extract_search_query(task)
+    brand_to_check = query if query else task
+    
+    normalized = await normalize_brand(brand_to_check, gemini_model)
+    if normalized and normalized != brand_to_check:
+        for name, url in SITE_MAP.items():
+            if re.search(rf'\b{re.escape(name)}\b', normalized.lower()):
+                return url
+                
     return None
 
 
 def _extract_search_query(task: str) -> Optional[str]:
     """Extract search query from task."""
+    
+    # AI models sometimes append rambling thoughts (e.g. "I'll do that now.").
+    # Strip everything after the first period, newline or question mark to isolate the command.
+    import re
+    first_sentence_match = re.split(r'[.\n!]', task)
+    clean_task = first_sentence_match[0].strip() if first_sentence_match else task
+
     patterns = [
+        r'(?:open|go\s+to)\s+(.+)',
         r'(?:and|then)\s+(?:search|look|find)\s+(?:for\s+|about\s+)?(.+)',
         r'search\s+(?:for\s+|about\s+)?["\']?(.+?)["\']?\s+(?:on|in|at)\s+\S+',
         r'search\s+(?:for\s+|about\s+)(.+)',
         r'(?:find|look\s+(?:for|up))\s+(.+?)(?:\s+on\s+|\s*$)',
     ]
     for p in patterns:
-        m = re.search(p, task, re.IGNORECASE)
+        m = re.search(p, clean_task, re.IGNORECASE)
         if m:
             q = m.group(1).strip()
             for name in SITE_MAP:
                 q = re.sub(rf'\b{re.escape(name)}\b', '', q, flags=re.IGNORECASE).strip()
+            # Strip trailing prepositions from end of query
+            q = re.sub(r'\s+(?:on|in|at)\s*$', '', q, flags=re.IGNORECASE).strip()
             q = re.sub(r'\s+', ' ', q).strip().rstrip('.')
+            # Remove quotes around queries explicitly if they were captured
+            q = re.sub(r'^["\']|["\']$', '', q).strip()
             if q and len(q) > 1:
                 return q
     return None
@@ -189,7 +217,7 @@ class DesktopBrowserSubAgent:
         yield {"type": "action", "message": f"✅ Found {self.browser.browser_name}"}
 
         # ── Step 2: Pre-navigation ───────────────────────────────────────
-        url = _extract_url(task)
+        url = await _extract_url(task, self.model)
         query = _extract_search_query(task)
 
         if url:
@@ -213,13 +241,21 @@ class DesktopBrowserSubAgent:
             else:
                 yield {"type": "action", "message": "⚠️ Couldn't find search box, using AI vision..."}
         elif query and not url:
-            # No specific site — just search in address bar (Google search)
-            yield {"type": "action", "message": f"🔍 Searching Google for: {query}"}
-            await self.browser.open_new_tab()
-            await asyncio.sleep(0.3)
-            await self.browser.focus_search_bar_and_search(query)
-            search_done = True
-            yield {"type": "action", "message": "✅ Google search submitted"}
+            if "open" in task.lower() or "go to" in task.lower():
+                import urllib.parse
+                ducky_url = f"https://duckduckgo.com/?q=!ducky+{urllib.parse.quote(query)}"
+                yield {"type": "action", "message": f"🍀 Feeling Lucky: {query}"}
+                await self.browser.navigate_to(ducky_url)
+                search_done = True
+                yield {"type": "action", "message": "✅ Directed to DuckDuckGo"}
+            else:
+                # No specific site — just search in address bar (Google search)
+                yield {"type": "action", "message": f"🔍 Searching Google for: {query}"}
+                await self.browser.open_new_tab()
+                await asyncio.sleep(0.3)
+                await self.browser.focus_search_bar_and_search(query)
+                search_done = True
+                yield {"type": "action", "message": "✅ Google search submitted"}
 
         # ── Step 4: Gemini agent loop (for complex tasks) ────────────────
         if not self.model:

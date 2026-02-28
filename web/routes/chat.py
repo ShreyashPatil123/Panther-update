@@ -218,6 +218,32 @@ async def ws_chat(websocket: WebSocket, session_id: str):
                 })
                 continue
 
+            if action == "bulk_delete_sessions":
+                del_sids = data.get("session_ids", [])
+                cleared_current = False
+                for sid in del_sids:
+                    await orchestrator.memory.delete_session(sid)
+                    if sid == session_id:
+                        cleared_current = True
+                
+                if cleared_current:
+                    session_id = str(uuid.uuid4())
+                    orchestrator.current_session_id = session_id
+
+                sessions = await orchestrator.memory.get_sessions()
+                
+                resp = {
+                    "type": "session",
+                    "session_id": session_id,
+                    "sessions": sessions,
+                }
+                
+                if cleared_current:
+                    resp["history"] = []
+                
+                await websocket.send_json(resp)
+                continue
+
             # ── Normal chat message ──
             text = data.get("text", "").strip()
             attachments: List[str] = data.get("attachments", [])

@@ -82,12 +82,12 @@
 CRITICAL AUTOMATION CONTEXT:
 You are integrated with a powerful backend automation system. You CAN and WILL open apps, go to websites, search the web, and control the browser. 
 If the user asks you to "open YouTube", "go to a website", "search for X", etc. NEVER say "I can't open applications" or "I don't have access". 
-Instead, just say a very brief, natural acknowledgment like "Got it.", "Sure thing.", or "Opening it now." and let the backend system take over.
+Instead, acknowledge it by EXACTLY stating what will be done in ONE short sentence without any conversational filler (e.g., "Searching for Ekaki Chapter 5 on YouTube." or "Opening Instagram."). 
+NEVER add extra sentences like "I have registered your input" or "I will now use my browsing capabilities". Just ONE clean sentence so the backend can parse it perfectly.
 
 RULES:
-- Be concise, helpful, and conversational. Respond in 1-3 sentences unless asked for detail.
+- Be concise, helpful, and conversational for normal questions. Respond in 1-3 sentences unless asked for detail.
 - Match the user's energy and speaking pace.
-- Quick answer: 1-3 sentences. Standard response: 2-4 sentences.
 - Avoid preambles like "That's a great question!" or "Certainly!"
 - Use natural connectors: "So...", "I see", "Got it...", "Alright..."
 - Be warm and natural, not robotic.
@@ -272,16 +272,13 @@ RULES:
           }
         }
 
-        // Turn complete — route transcript to agent
+        // Turn complete — AI finished speaking
+        // NOTE: We do NOT route transcriptBuffer to the agent here.
+        // transcriptBuffer contains what the AI said (modelTurn), not what the user said.
+        // The user's actual speech is captured by Web Speech API and routed via VAD silence detection.
         if (data.serverContent?.turnComplete) {
-          console.log('[Panther Live] Turn complete');
-          const transcript = transcriptBuffer.trim();
+          console.log('[Panther Live] Gemini turn complete (AI response:', transcriptBuffer.trim().slice(0, 80), '...)');
           transcriptBuffer = '';
-
-          // Route the transcript through the agent pipeline
-          if (transcript) {
-            routeTranscript(transcript);
-          }
 
           // Wait for audio queue to drain, then switch to listening
           waitForAudioDrain(() => {
@@ -412,12 +409,75 @@ RULES:
   }
 
   /* ══════════════════════════════════════════════════════════
-     5. Microphone — Continuous Streaming + VAD for Turn Detection
+     5. Microphone + SpeechRecognition (STT) 
      
-     Key difference from before:
-     - Audio is streamed CONTINUOUSLY to Gemini (every ScriptProcessor callback)
-     - VAD only controls when to send turnComplete (not when to send audio)
+     Key difference:
+     - Audio streamed CONTINUOUSLY to Gemini via ScriptProcessor
+     - Web Speech API parses the user's voice accurately for the Backend
   ══════════════════════════════════════════════════════════ */
+  let recognition = null;
+  let finalTranscript = '';
+
+  function initSpeechRecognition() {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      console.warn('[Panther Live] Web Speech API not supported in this browser.');
+      return;
+    }
+    
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = () => {
+      console.log('[Panther Live] SpeechRecognition started');
+    };
+
+    recognition.onerror = (event) => {
+      console.warn('[Panther Live] SpeechRecognition error:', event.error);
+    };
+
+    recognition.onend = () => {
+      // Auto-restart if mic is still on (SpeechRecognition often times out)
+      if (micOn) {
+        try { recognition.start(); } catch (e) {}
+      }
+    };
+
+    recognition.onresult = (event) => {
+      // CRITICAL: Ignore results while AI is speaking or agent is processing
+      // The mic picks up TTS audio and SpeechRecognition interprets it as user speech,
+      // producing garbled fragments like "string. It needs" instead of the user's words.
+      if (isPlaying || assistantState === 'speaking' || isProcessingAgent) {
+        console.log('[Panther Live] Ignoring SpeechRecognition result during playback/processing');
+        return;
+      }
+
+      if (!isSpeaking) {
+         isSpeaking = true;
+         setState('listening');
+         resetIdleTimer();
+      }
+      silenceStart = 0; // Keep VAD alive
+
+      let interimTranscript = '';
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript + ' ';
+        } else {
+          interimTranscript += event.results[i][0].transcript;
+        }
+      }
+      
+      // Display the transcript in the UI
+      if (interimTranscript.trim() || finalTranscript.trim()) {
+        el.transcriptText.textContent = finalTranscript + interimTranscript;
+        el.transcript.classList.add('visible');
+      }
+    };
+  }
+
   async function startMic() {
     try {
       audioContext = new AudioContext({ sampleRate: 16000 });
@@ -437,6 +497,13 @@ RULES:
         }
       });
 
+      // Start Web Speech API alongside AudioContext
+      if (!recognition) initSpeechRecognition();
+      if (recognition) {
+        finalTranscript = ''; // Reset transcript
+        try { recognition.start(); } catch(e) {}
+      }
+
       const source = audioContext.createMediaStreamSource(micStream);
       micProcessor = audioContext.createScriptProcessor(512, 1, 1); // small buffer for low latency
 
@@ -449,7 +516,12 @@ RULES:
         const int16 = floatTo16BitPCM(floatSamples);
 
         // Stream EVERY chunk to Gemini continuously
-        streamAudioChunk(int16);
+        if (!isPlaying) {
+          streamAudioChunk(int16);
+        } else {
+          // AEC
+          streamAudioChunk(new Int16Array(int16.length));
+        }
 
         // VAD: detect speech/silence for turn signaling
         let energy = 0;
@@ -459,7 +531,6 @@ RULES:
         energy = Math.sqrt(energy / floatSamples.length);
 
         if (energy > SILENCE_THRESHOLD) {
-          // User is speaking — update UI
           if (!isSpeaking) {
             isSpeaking = true;
             setState('listening');
@@ -467,15 +538,27 @@ RULES:
           }
           silenceStart = 0;
         } else {
-          // Silence — update UI only (model handles turn detection)
           if (isSpeaking) {
             if (!silenceStart) silenceStart = Date.now();
             if (Date.now() - silenceStart > SILENCE_AFTER_SPEECH_MS) {
               isSpeaking = false;
-              // Don't send turnComplete — model handles this
-              // Just show processing state so user knows we're waiting
               setState('processing');
               resetIdleTimer();
+
+              // SEND TRANSCRIPT TO BACKEND ON SILENCE
+              // But ONLY if we weren't just listening to AI playback
+              if (isPlaying || isProcessingAgent) {
+                // Discard anything captured during playback — it's TTS echo
+                finalTranscript = '';
+              } else {
+                const transcriptToSend = finalTranscript.trim();
+                if (transcriptToSend) {
+                  console.log('[Panther Live] Turn complete (VAD) - User said:', transcriptToSend);
+                  routeTranscript(transcriptToSend);
+                  finalTranscript = ''; // Reset for next turn
+                  el.transcript.classList.remove('visible');
+                }
+              }
             }
           }
         }
@@ -493,6 +576,7 @@ RULES:
   }
 
   function stopMic() {
+    if (recognition) { try { recognition.stop(); } catch(e){} }
     if (micProcessor) { micProcessor.disconnect(); micProcessor = null; }
     if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
     if (audioContext) { audioContext.close().catch(() => {}); audioContext = null; }
@@ -602,6 +686,7 @@ RULES:
     isProcessingAgent = false;
     pendingConfirmation = null;
     window._interruptedGemini = false;
+    window._syntheticTurnsSent = 0;
 
     initParticleBubble();
     if (window._pantherBubbleStart) window._pantherBubbleStart();
@@ -671,7 +756,7 @@ RULES:
   ══════════════════════════════════════════════════════════ */
 
   /**
-   * Route a Gemini transcript to the backend or handle confirmation.
+   * Route the user's speech transcript (from Web Speech API) to the backend or handle confirmation.
    */
   async function routeTranscript(transcript) {
     // Handle pending confirmation response ("yes" / "cancel")
@@ -774,6 +859,7 @@ RULES:
                 clearPlaybackQueue();
                 if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
                     // Instantly tell Gemini to stop generating its refusal response
+                    window._syntheticTurnsSent = (window._syntheticTurnsSent || 0) + 1;
                     geminiWs.send(JSON.stringify({
                        clientContent: { turns: [{ role: 'user', parts: [{ text: ' ' }] }], turnComplete: true }
                     }));
@@ -836,6 +922,8 @@ RULES:
     if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
       // Re-enable audio processing since we just interrupted it
       window._interruptedGemini = false;
+      // Track this synthetic turn so we ignore its transcript when it completes
+      window._syntheticTurnsSent = (window._syntheticTurnsSent || 0) + 1;
       
       const payload = {
         clientContent: {

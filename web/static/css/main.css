@@ -206,14 +206,100 @@ body {
   box-shadow: var(--accent-glow);
 }
 
-/* Section label */
+/* Section Header */
+.sidebar-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+}
 .sidebar-section-label {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 1.2px;
   text-transform: uppercase;
   color: var(--text-muted);
-  padding: 4px 10px;
+}
+.edit-history-btn {
+  width: 24px;
+  height: 24px;
+}
+
+/* Bulk Toolbar */
+.bulk-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  margin: 0 4px 4px;
+}
+.bulk-select-all {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.bulk-select-all input[type="checkbox"], 
+.history-checkbox {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+  transition: var(--transition);
+}
+.bulk-select-all input[type="checkbox"]:checked,
+.history-checkbox:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.bulk-select-all input[type="checkbox"]:checked::after,
+.history-checkbox:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 5px;
+  height: 9px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.bulk-count {
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 600;
+}
+.bulk-actions {
+  display: flex;
+  gap: 4px;
+}
+.bulk-actions .icon-btn {
+  width: 24px;
+  height: 24px;
+}
+.bulk-actions .icon-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.history-item .history-checkbox {
+  display: none;
+  flex-shrink: 0;
+}
+.selection-mode .history-item .history-checkbox {
+  display: inline-block;
+}
+.selection-mode .history-del-btn {
+  display: none !important;
 }
 
 /* History list */

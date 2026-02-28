@@ -217,7 +217,6 @@ class SettingsDialog(QDialog):
             # --- Meta Llama ---
             "meta/llama-3.1-8b-instruct",
             "meta/llama-3.1-70b-instruct",
-            "meta/llama-3.1-405b-instruct",
             "meta/llama-3.2-1b-instruct",
             "meta/llama-3.2-3b-instruct",
             "meta/llama-3.2-11b-vision-instruct",
@@ -259,7 +258,6 @@ class SettingsDialog(QDialog):
             "nvidia/llama-3.1-nemoguard-8b-content-safety",
             "nvidia/llama-3.1-nemoguard-8b-topic-control",
             "nvidia/llama-3.1-nemotron-70b-reward",
-            "nvidia/llama-3.1-nemotron-nano-4b-v1.1",
             "nvidia/llama-3.1-nemotron-nano-8b-v1",
             "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
             "nvidia/llama-3.1-nemotron-safety-guard-8b-v3",
@@ -275,9 +273,7 @@ class SettingsDialog(QDialog):
             "nvidia/usdcode-llama-3.1-70b-instruct",
             # --- Deepseek ---
             "deepseek-ai/deepseek-r1-distill-llama-8b",
-            "deepseek-ai/deepseek-r1-distill-qwen-14b",
             "deepseek-ai/deepseek-r1-distill-qwen-32b",
-            "deepseek-ai/deepseek-v3.1",
             "deepseek-ai/deepseek-v3.1-terminus",
             "deepseek-ai/deepseek-v3.2",
             # --- Qwen ---
@@ -309,20 +305,15 @@ class SettingsDialog(QDialog):
             # --- OpenAI (open-source) ---
             "openai/gpt-oss-20b",
             "openai/gpt-oss-120b",
-            # --- MiniMax ---
-            "minimaxai/minimax-m2",
-            "minimaxai/minimax-m2.1",
             # --- AI21 Labs ---
             "ai21labs/jamba-1.5-mini-instruct",
             # --- Abacus AI ---
             "abacusai/dracarys-llama-3.1-70b-instruct",
             # --- IBM ---
-            "ibm/granite-3.3-8b-instruct",
             "ibm/granite-guardian-3.0-8b",
             # --- Stepfun ---
             "stepfun-ai/step-3.5-flash",
             # --- Z-AI (Zhipu) ---
-            "z-ai/glm4.7",
             "z-ai/glm5",
             # --- ByteDance ---
             "bytedance/seed-oss-36b-instruct",
