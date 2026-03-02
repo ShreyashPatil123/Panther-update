@@ -3,7 +3,7 @@
 import asyncio
 import math
 import random
-from typing import Tuple
+from typing import Optional, Tuple
 
 from loguru import logger
 
@@ -25,6 +25,20 @@ class HumanBehaviourEngine:
         self._cursor_x: float = 0
         self._cursor_y: float = 0
 
+    import contextlib
+
+    @contextlib.asynccontextmanager
+    async def _allow_action(self):
+        """Temporarily bypass the UI event blocker so agent actions succeed."""
+        try:
+            await self.page.evaluate("window.__panther_allow_next_action = true")
+            yield
+        finally:
+            try:
+                await self.page.evaluate("window.__panther_allow_next_action = false")
+            except Exception:
+                pass  # Ignore if page navigation occurred
+
     # ── Navigation ────────────────────────────────────────────────────────────
 
     async def navigate(self, url: str) -> None:
@@ -34,19 +48,29 @@ class HumanBehaviourEngine:
 
     # ── Click ─────────────────────────────────────────────────────────────────
 
-    async def click(self, selector: str, double: bool = False) -> None:
-        """Click an element with Bezier mouse movement and hover delay."""
-        element = await self.page.wait_for_selector(selector, timeout=5000)
-        if not element:
-            raise ValueError(f"Element not found: {selector}")
+    async def click(
+        self, selector: str = "", double: bool = False,
+        x: Optional[float] = None, y: Optional[float] = None,
+    ) -> None:
+        """Click an element with Bezier mouse movement and hover delay.
+        
+        If x/y are provided, skip selector resolution and click those coords directly.
+        """
+        if x is not None and y is not None:
+            # Direct coordinate mode — bypass selector lookup
+            target_x, target_y = float(x), float(y)
+        else:
+            # Selector mode — resolve element bounding box
+            element = await self.page.wait_for_selector(selector, timeout=5000)
+            if not element:
+                raise ValueError(f"Element not found: {selector}")
 
-        box = await element.bounding_box()
-        if not box:
-            raise ValueError(f"Element has no bounding box: {selector}")
+            box = await element.bounding_box()
+            if not box:
+                raise ValueError(f"Element has no bounding box: {selector}")
 
-        # Target: center of element with slight random offset
-        target_x = box["x"] + box["width"] * (0.3 + random.random() * 0.4)
-        target_y = box["y"] + box["height"] * (0.3 + random.random() * 0.4)
+            target_x = box["x"] + box["width"] * (0.3 + random.random() * 0.4)
+            target_y = box["y"] + box["height"] * (0.3 + random.random() * 0.4)
 
         # Move mouse via Bezier curve
         await self._bezier_mouse_move(target_x, target_y)
@@ -54,66 +78,84 @@ class HumanBehaviourEngine:
         # Brief hover before clicking (humans don't click instantly)
         await asyncio.sleep(random.uniform(0.08, 0.25))
 
-        if double:
-            await self.page.mouse.dblclick(target_x, target_y)
-        else:
-            await self.page.mouse.click(target_x, target_y)
+        # Trigger visual click ripple
+        try:
+            await self.page.evaluate(
+                f"if(window.__showPantherClick) window.__showPantherClick({target_x}, {target_y})"
+            )
+        except Exception:
+            pass  # Visual feedback is non-critical
+
+        async with self._allow_action():
+            if double:
+                await self.page.mouse.dblclick(target_x, target_y)
+            else:
+                await self.page.mouse.click(target_x, target_y)
 
         await self._human_pause("after_click")
 
     # ── Type ──────────────────────────────────────────────────────────────────
 
     async def type_text(
-        self, selector: str, text: str, clear_first: bool = True
+        self, selector: str = "", text: str = "", clear_first: bool = True,
+        x: Optional[float] = None, y: Optional[float] = None,
     ) -> None:
-        """Type text with human rhythm: variable delays, burst typing, occasional typos."""
-        await self.click(selector)  # Click into field first (focus)
+        """Type text with human rhythm.
+        
+        If x/y are provided, click those coordinates first instead of using selector.
+        """
+        # Focus the target field
+        if x is not None and y is not None:
+            await self.click(x=x, y=y)
+        else:
+            await self.click(selector)
         await asyncio.sleep(random.uniform(0.1, 0.3))
 
-        if clear_first:
-            await self.page.keyboard.press("Control+a")
-            await asyncio.sleep(random.uniform(0.05, 0.1))
-            await self.page.keyboard.press("Delete")
-            await asyncio.sleep(random.uniform(0.05, 0.15))
-
-        # Type character by character with human rhythm
-        wpm = random.uniform(55, 85)
-        base_delay = 60 / (wpm * 5)  # Average seconds per character
-
-        i = 0
-        while i < len(text):
-            char = text[i]
-
-            # Occasional burst typing (humans type some words faster)
-            burst = random.random() < 0.15
-            if burst:
-                burst_end = min(i + random.randint(3, 8), len(text))
-                burst_text = text[i:burst_end]
-                await self.page.keyboard.type(burst_text)
-                await asyncio.sleep(random.uniform(base_delay * 0.6, base_delay))
-                i = burst_end
-                continue
-
-            # Occasional typo and correction (2% chance)
-            if random.random() < 0.02 and char.isalpha():
-                typo = chr(ord(char) + random.choice([-1, 1]))
-                await self.page.keyboard.type(typo)
-                await asyncio.sleep(random.uniform(0.1, 0.25))
-                await self.page.keyboard.press("Backspace")
+        async with self._allow_action():
+            if clear_first:
+                await self.page.keyboard.press("Control+a")
+                await asyncio.sleep(random.uniform(0.05, 0.1))
+                await self.page.keyboard.press("Delete")
                 await asyncio.sleep(random.uniform(0.05, 0.15))
 
-            await self.page.keyboard.type(char)
+            # Type character by character with human rhythm
+            wpm = random.uniform(55, 85)
+            base_delay = 60 / (wpm * 5)  # Average seconds per character
 
-            # Variable inter-keystroke delay
-            delay = base_delay + random.gauss(0, base_delay * 0.3)
-            delay = max(0.03, min(delay, 0.4))  # Clamp to [30ms, 400ms]
+            i = 0
+            while i < len(text):
+                char = text[i]
 
-            # Longer pause after punctuation (end of word/sentence)
-            if char in (" ", ".", ",", "!", "?", "\n"):
-                delay *= random.uniform(1.5, 3.0)
+                # Occasional burst typing (humans type some words faster)
+                burst = random.random() < 0.15
+                if burst:
+                    burst_end = min(i + random.randint(3, 8), len(text))
+                    burst_text = text[i:burst_end]
+                    await self.page.keyboard.type(burst_text)
+                    await asyncio.sleep(random.uniform(base_delay * 0.6, base_delay))
+                    i = burst_end
+                    continue
 
-            await asyncio.sleep(delay)
-            i += 1
+                # Occasional typo and correction (2% chance)
+                if random.random() < 0.02 and char.isalpha():
+                    typo = chr(ord(char) + random.choice([-1, 1]))
+                    await self.page.keyboard.type(typo)
+                    await asyncio.sleep(random.uniform(0.1, 0.25))
+                    await self.page.keyboard.press("Backspace")
+                    await asyncio.sleep(random.uniform(0.05, 0.15))
+
+                await self.page.keyboard.type(char)
+
+                # Variable inter-keystroke delay
+                delay = base_delay + random.gauss(0, base_delay * 0.3)
+                delay = max(0.03, min(delay, 0.4))  # Clamp to [30ms, 400ms]
+
+                # Longer pause after punctuation (end of word/sentence)
+                if char in (" ", ".", ",", "!", "?", "\n"):
+                    delay *= random.uniform(1.5, 3.0)
+
+                await asyncio.sleep(delay)
+                i += 1
 
         await self._human_pause("after_type")
 
@@ -126,14 +168,15 @@ class HumanBehaviourEngine:
         # Scroll in multiple smaller steps (momentum simulation)
         steps = random.randint(3, 7)
 
-        for i in range(steps):
-            step_amount = delta_y / steps
-            step_amount *= random.uniform(0.8, 1.2)  # Vary each step
-            await self.page.mouse.wheel(0, step_amount)
+        async with self._allow_action():
+            for i in range(steps):
+                step_amount = delta_y / steps
+                step_amount *= random.uniform(0.8, 1.2)  # Vary each step
+                await self.page.mouse.wheel(0, step_amount)
 
-            # Decreasing pause between steps (scroll slows down)
-            pause = 0.05 * (1 + (i / steps))
-            await asyncio.sleep(pause)
+                # Decreasing pause between steps (scroll slows down)
+                pause = 0.05 * (1 + (i / steps))
+                await asyncio.sleep(pause)
 
         # Brief pause after scrolling before next action
         await asyncio.sleep(random.uniform(0.2, 0.6))
@@ -186,7 +229,13 @@ class HumanBehaviourEngine:
                 + t_eased ** 3 * target_y
             )
 
-            await self.page.mouse.move(x, y)
+            # Move Playwright CDP mouse AND visual cursor concurrently
+            await asyncio.gather(
+                self.page.mouse.move(x, y),
+                self.page.evaluate(
+                    f"if(window.__movePantherCursor) window.__movePantherCursor({x:.1f}, {y:.1f})"
+                ),
+            )
 
             step_delay = (dist / (steps * 3000)) / speed_factor
             step_delay = max(0.002, step_delay)

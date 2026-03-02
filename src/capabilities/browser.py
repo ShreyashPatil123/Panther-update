@@ -77,6 +77,22 @@ class BrowserController:
                 result_text = f"Error: {event.get('message', 'Unknown error')}"
         return result_text
 
+    def pause_agent(self) -> None:
+        """Pause the running browser agent."""
+        if _dispatcher is not None:
+            _dispatcher.pause_agent()
+
+    def resume_agent(self) -> None:
+        """Resume a paused browser agent."""
+        if _dispatcher is not None:
+            _dispatcher.resume_agent()
+
+    def get_agent_state(self) -> str:
+        """Return 'running', 'paused', or 'idle'."""
+        if _dispatcher is not None:
+            return _dispatcher.get_state()
+        return "idle"
+
     async def shutdown(self):
         """Clean up browser resources."""
         global _dispatcher

@@ -630,6 +630,15 @@ class AgentOrchestrator:
             "automate", "scrape", "extract from website", "extract from page",
             "open the website", "open the page", "open the site", "open a website",
             "visit", "go to the",
+            # ── Comet-style action verbs (search/find/play/watch/buy/order) ──
+            "search for", "find me", "find the", "look for", "look up",
+            "play a video", "play music", "play lofi", "play a song",
+            "watch a video", "watch the", "watch on",
+            "buy from", "order from", "shop for", "shop on", "add to cart",
+            "book a", "book on", "book ticket", "book flight", "book hotel",
+            "compare prices", "check price", "check the price", "show me the price",
+            "show me on", "show me results", "show results for",
+            "download from", "sign up on", "sign in to", "log in to", "login to",
         ]
 
         # ── Universal "open X" detection ──────────────────────────────────
@@ -644,6 +653,30 @@ class AgentOrchestrator:
             # Only classify as browser_task if target is NOT a file operation
             if not re.search(r'\b(file|folder|directory|document|terminal|cmd|powershell)\b', target):
                 logger.info(f"Intent: Universal 'open X' match → browser_task (target='{target[:50]}')")
+                return "browser_task"
+
+        # ── Comet-style action-verb + target detection ────────────────────
+        # "search for X", "find X on Y", "play X on Y", "watch X", "buy X"
+        _action_match = re.match(
+            r'^\s*(?:search|find|play|watch|buy|order|book|compare|shop|download|check)\s+(.+)',
+            message, re.IGNORECASE
+        )
+        if _action_match:
+            target = _action_match.group(1).strip().lower()
+            if not re.search(r'\b(file|folder|directory|document)\b', target):
+                logger.info(f"Intent: Action-verb match → browser_task (target='{target[:50]}')")
+                return "browser_task"
+
+        # ── "show me X" / "look up X" detection ───────────────────────────
+        _show_match = re.match(
+            r'^\s*(?:show\s+me|look\s+up|look\s+for|give\s+me)\s+(.+)',
+            message, re.IGNORECASE
+        )
+        if _show_match:
+            target = _show_match.group(1).strip().lower()
+            # Only if it mentions a website or platform context
+            if re.search(r'\b(on|from|at|website|site|online|web|page)\b', target):
+                logger.info(f"Intent: 'show me' + web context → browser_task")
                 return "browser_task"
 
         # ── Dynamic SITE_MAP check — covers ALL 40+ known platforms ───────

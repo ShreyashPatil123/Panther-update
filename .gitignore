@@ -63,3 +63,16 @@ htmlcov/
 
 # Local assistant settings
 .claude/
+
+# Temporary and Large Files
+*.exe
+*.txt
+traceback.txt
+traceback_utf8.txt
+failing_models.json
+ollama_models.txt
+browser-automation-architecture.md
+config.yaml
+docker-compose.yml
+OllamaSetup.exe
+data/browser_profile/

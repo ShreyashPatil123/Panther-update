@@ -8,6 +8,7 @@ specific gold conversion logic.
 
 import asyncio
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -17,7 +18,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 # ── Twelve Data configuration ────────────────────────────────────────────────
-TWELVE_DATA_API_KEY = ""
+TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY", "")
 TWELVE_DATA_BASE   = "https://api.twelvedata.com"
 
 # ── Rate-limit constants (free plan) ─────────────────────────────────────────

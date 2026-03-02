@@ -36,7 +36,7 @@ VISION_MODELS = [
     "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
 ]
 
-DEFAULT_VISION_MODEL = "meta/llama-3.2-90b-vision-instruct"
+DEFAULT_VISION_MODEL = "moonshotai/kimi-k2.5"
 MAX_IMAGE_DIMENSION = 512   # Resize images larger than this (keeps base64 small)
 MAX_VIDEO_FRAMES = 2        # Number of key frames to extract from videos
 MAX_TEXT_CHARS = 30000      # Truncate very long documents

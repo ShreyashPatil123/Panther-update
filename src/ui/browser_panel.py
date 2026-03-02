@@ -1,9 +1,10 @@
-"""Browser Panel - Browser automation status and control UI."""
+"""Browser Panel - Browser automation status, control UI, and live reasoning stream."""
 import asyncio
+from datetime import datetime
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QPixmap, QTextCharFormat, QTextCursor
 from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -20,16 +21,36 @@ from PyQt6.QtWidgets import (
 from loguru import logger
 
 
+# ── Color palette for reasoning stream events ────────────────────────────────
+_EVENT_COLORS = {
+    "plan":   "#A78BFA",   # Violet
+    "action": "#FFB347",   # Amber
+    "status": "#60A5FA",   # Blue
+    "result": "#34D399",   # Green
+    "error":  "#F87171",   # Red
+}
+
+
 class BrowserPanel(QWidget):
-    """Browser activity monitor and control panel."""
+    """Browser activity monitor, control panel, and live reasoning stream."""
+
+    # Thread-safe signal: emitted from async/Playwright thread,
+    # received on the Qt main thread to update UI widgets.
+    live_stream_signal = pyqtSignal(dict)
 
     def __init__(self, browser_controller=None, parent=None):
         super().__init__(parent)
         self.browser_controller = browser_controller
+        self._is_paused = False
+
         self._refresh_timer = QTimer()
         self._refresh_timer.timeout.connect(self._refresh_status)
         self._refresh_timer.start(2000)  # Refresh every 2s
+
         self._setup_ui()
+
+        # Connect the thread-safe signal to the slot
+        self.live_stream_signal.connect(self._on_live_stream_event)
 
     def _setup_ui(self):
         """Setup browser panel UI."""
@@ -59,12 +80,25 @@ class BrowserPanel(QWidget):
         desc.setStyleSheet("color: #888; font-size: 13px;")
         layout.addWidget(desc)
 
-        # Controls
+        # ── Controls row ─────────────────────────────────────────────────
         controls_layout = QHBoxLayout()
+
         self.close_browser_btn = QPushButton("Close Browser")
         self.close_browser_btn.setObjectName("secondary")
         self.close_browser_btn.clicked.connect(self._close_browser)
         controls_layout.addWidget(self.close_browser_btn)
+
+        self.pause_btn = QPushButton("⏸ Pause Agent")
+        self.pause_btn.setStyleSheet(
+            "QPushButton {"
+            "  background-color: #FF6B35; color: white; border: none;"
+            "  padding: 6px 16px; border-radius: 6px; font-weight: bold;"
+            "}"
+            "QPushButton:hover { background-color: #E55A2B; }"
+        )
+        self.pause_btn.clicked.connect(self._toggle_pause)
+        controls_layout.addWidget(self.pause_btn)
+
         controls_layout.addStretch()
         layout.addLayout(controls_layout)
 
@@ -126,6 +160,114 @@ class BrowserPanel(QWidget):
         splitter.addWidget(right_widget)
         splitter.setSizes([240, 560])
         layout.addWidget(splitter)
+
+        # ── Live Reasoning Stream ────────────────────────────────────────
+        stream_sep = QFrame()
+        stream_sep.setFrameShape(QFrame.Shape.HLine)
+        stream_sep.setStyleSheet("color: #404040;")
+        layout.addWidget(stream_sep)
+
+        stream_header = QHBoxLayout()
+        stream_label = QLabel("Live Reasoning Stream")
+        stream_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        stream_header.addWidget(stream_label)
+        stream_header.addStretch()
+
+        clear_stream_btn = QPushButton("Clear")
+        clear_stream_btn.setObjectName("secondary")
+        clear_stream_btn.setFixedWidth(60)
+        clear_stream_btn.clicked.connect(lambda: self.reasoning_stream.clear())
+        stream_header.addWidget(clear_stream_btn)
+
+        layout.addLayout(stream_header)
+
+        self.reasoning_stream = QTextEdit()
+        self.reasoning_stream.setReadOnly(True)
+        self.reasoning_stream.setMinimumHeight(140)
+        self.reasoning_stream.setMaximumHeight(250)
+        self.reasoning_stream.setPlaceholderText(
+            "Agent reasoning steps will appear here in real-time..."
+        )
+        self.reasoning_stream.setStyleSheet(
+            "QTextEdit {"
+            "  background-color: #1A1A2E; color: #E0E0E0; font-family: 'Consolas', monospace;"
+            "  font-size: 12px; border: 1px solid #333; border-radius: 6px; padding: 8px;"
+            "}"
+        )
+        layout.addWidget(self.reasoning_stream)
+
+    # ── Pause / Resume toggle ────────────────────────────────────────────────
+
+    def _toggle_pause(self):
+        """Toggle between paused and running states."""
+        if not self.browser_controller:
+            return
+
+        if self._is_paused:
+            # Resume
+            self.browser_controller.resume_agent()
+            self._is_paused = False
+            self.pause_btn.setText("⏸ Pause Agent")
+            self.pause_btn.setStyleSheet(
+                "QPushButton {"
+                "  background-color: #FF6B35; color: white; border: none;"
+                "  padding: 6px 16px; border-radius: 6px; font-weight: bold;"
+                "}"
+                "QPushButton:hover { background-color: #E55A2B; }"
+            )
+            self._append_stream_message("status", "▶ Agent resumed by user")
+        else:
+            # Pause
+            self.browser_controller.pause_agent()
+            self._is_paused = True
+            self.pause_btn.setText("▶ Resume Agent")
+            self.pause_btn.setStyleSheet(
+                "QPushButton {"
+                "  background-color: #34D399; color: white; border: none;"
+                "  padding: 6px 16px; border-radius: 6px; font-weight: bold;"
+                "}"
+                "QPushButton:hover { background-color: #2AB887; }"
+            )
+            self._append_stream_message("status", "⏸ Agent paused by user")
+
+    # ── Live Reasoning Stream ────────────────────────────────────────────────
+
+    def update_live_stream(self, event_dict: dict):
+        """
+        Thread-safe entry point: emit the signal so the slot runs on the
+        Qt main thread. Call this from any thread (e.g. the Playwright loop).
+        """
+        self.live_stream_signal.emit(event_dict)
+
+    def _on_live_stream_event(self, event_dict: dict):
+        """Slot: receives event_dict on the Qt main thread and appends it."""
+        event_type = event_dict.get("type", "action")
+        message = event_dict.get("message", "")
+        self._append_stream_message(event_type, message)
+
+    def _append_stream_message(self, event_type: str, message: str):
+        """Append a color-coded, timestamped message to the reasoning stream."""
+        color = _EVENT_COLORS.get(event_type, "#E0E0E0")
+        timestamp = datetime.now().strftime("%H:%M:%S")
+
+        cursor = self.reasoning_stream.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+
+        # Timestamp in grey
+        fmt_time = QTextCharFormat()
+        fmt_time.setForeground(QColor("#666"))
+        cursor.insertText(f"[{timestamp}] ", fmt_time)
+
+        # Message in event color
+        fmt_msg = QTextCharFormat()
+        fmt_msg.setForeground(QColor(color))
+        cursor.insertText(f"{message}\n", fmt_msg)
+
+        # Auto-scroll to bottom
+        self.reasoning_stream.setTextCursor(cursor)
+        self.reasoning_stream.ensureCursorVisible()
+
+    # ── Status refresh ───────────────────────────────────────────────────────
 
     def _refresh_status(self):
         """Refresh browser status from controller."""

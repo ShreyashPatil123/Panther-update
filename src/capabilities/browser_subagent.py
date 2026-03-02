@@ -18,11 +18,20 @@ import base64
 import json
 import os
 import re
-from typing import AsyncGenerator, Dict, List, Optional, Tuple
-
+import random
+import threading
+from typing import AsyncGenerator, Dict, List, Optional, Tuple, Any
 from loguru import logger
 import aiohttp
+from datetime import datetime
+
+# --- Import UI Overlay for manual injection fix ---
+from src.capabilities.browser_task_dispatcher import UI_OVERLAY_SCRIPT
+from dotenv import load_dotenv
 from src.utils.brand_normalizer import normalize_brand
+
+# Ensure .env variables are available via os.getenv
+load_dotenv()
 
 try:
     import google.generativeai as genai
@@ -65,6 +74,9 @@ Page:
 
 Completion:
   {"action": "done", "params": {"result": "Summary of what was accomplished"}}
+
+Research (use ONLY if you are stuck or don't know the UI layout for a complex task):
+  {"action": "research", "query": "How to change password on Github"}
 
 RULES:
 1. ALWAYS reference elements by their [index] number from the tree.
@@ -532,24 +544,52 @@ class BrowserSubAgent:
     - Gemini Flash visual reasoning
     """
 
-    def __init__(self, api_key: str, playwright_page, extension_client):
+    def __init__(self, api_key: str, playwright_page, extension_client, dispatcher=None):
         self.api_key = api_key
         self.page = playwright_page
         self.context = playwright_page.context  # Access to all tabs
         self.ext = extension_client
+        self.dispatcher = dispatcher  # For pause/resume support
         self.history: list = []
         self.max_steps = int(os.getenv("BROWSER_MAX_STEPS", "25"))
         self._element_map: Dict[int, dict] = {}  # index → element info
 
-        # Configure Gemini
-        self.model = None
-        if genai and api_key:
+        # ── Human-like interaction engine (Bezier curves, visual cursor) ──
+        from src.capabilities.human_behaviour import HumanBehaviourEngine
+        self.human = HumanBehaviourEngine(playwright_page)
+
+        # ── AI Provider: NVIDIA NIM (primary) or Gemini (fallback) ────
+        self.nvidia_api_key = os.getenv("NVIDIA_API_KEY", "")
+        self.nvidia_base_url = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+        self.nvidia_vision_model = "moonshotai/kimi-k2.5"
+        self.nvidia_text_model = "meta/llama-3.1-70b-instruct"
+
+        self.model = None  # Gemini fallback
+        self._provider = "none"
+
+        ollama_enabled = os.getenv("OLLAMA_ENABLED", "false").lower() == "true"
+        ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+
+        if ollama_enabled:
+            self._provider = "nvidia"  # Reuse the NVIDIA logic since Ollama supports the OpenAI format
+            self.nvidia_api_key = os.getenv("OLLAMA_API_KEY", "ollama")
+            self.nvidia_base_url = f"{ollama_base_url}/v1"
+            self.nvidia_vision_model = os.getenv("OLLAMA_MODEL", "moonshotai/kimi-k2.5")
+            self.nvidia_text_model = os.getenv("OLLAMA_MODEL", "moonshotai/kimi-k2.5")
+            logger.info(f"[SubAgent] Using Local Ollama for browser agent planning ({self.nvidia_vision_model})")
+        elif self.nvidia_api_key and self.nvidia_api_key != "your_api_key_here":
+            self._provider = "nvidia"
+            logger.info("[SubAgent] Using NVIDIA NIM for browser agent planning")
+        elif genai and api_key:
             try:
                 genai.configure(api_key=api_key)
                 self.model = genai.GenerativeModel("gemini-2.0-flash")
-                logger.info("[SubAgent] Gemini initialized")
+                self._provider = "gemini"
+                logger.info("[SubAgent] Using Gemini Flash for browser agent planning")
             except Exception as e:
                 logger.error(f"[SubAgent] Gemini init failed: {e}")
+        else:
+            logger.warning("[SubAgent] No AI provider available for planning!")
 
     # ── Main execution loop ──────────────────────────────────────────────────
 
@@ -558,48 +598,48 @@ class BrowserSubAgent:
     ) -> AsyncGenerator[dict, None]:
         yield {"type": "plan", "message": f"🧠 Understanding task: {task}"}
 
-        # ── Pre-navigation ───────────────────────────────────────────────
+        # ── Pause checkpoint (before pre-navigation) ─────────────────────
+        if self.dispatcher and not self.dispatcher.running_event.is_set():
+            yield {"type": "status", "message": "⏸ Agent paused — waiting for resume..."}
+            await self.dispatcher.running_event.wait()
+            yield {"type": "status", "message": "▶ Agent resumed"}
+
+        # ══════════════════════════════════════════════════════════════════
+        # Phase 1: Resolve a starting URL and navigate there ONCE.
+        # Everything after this is pure AI — no scripted searches.
+        # ══════════════════════════════════════════════════════════════════
         url = _extract_url(task)
-        query = _extract_search_query(task)
-        
-        # If no explicit URL is found but the user wants to go to an official website or we have a query, run the LLM fallback chain
-        if not url and (re.search(r'\b(website|site|page|open|go\s+to|visit)\b', task.lower()) or " on " in task.lower()):
-            # ── Normalize the brand name (fix typos/spacing) ──────────
+
+        if not url:
+            # Try brand normalization + LLM URL resolution chain
             raw_brand = _extract_brand_name(task)
+            task_for_resolve = task
+
             if raw_brand:
                 normalized = await normalize_brand(raw_brand, self.model)
                 if normalized and normalized != raw_brand.lower():
                     yield {"type": "action", "message": f"✏️ Normalized: '{raw_brand}' → '{normalized}'"}
-                    # Re-check SITE_MAP with normalized name
                     if normalized in SITE_MAP:
                         url = SITE_MAP[normalized]
                         yield {"type": "action", "message": f"✨ Matched known site: {url}"}
                     else:
-                        # Build a normalized task for the resolution chain
                         task_for_resolve = re.sub(re.escape(raw_brand), normalized, task, flags=re.IGNORECASE)
-                else:
-                    task_for_resolve = task
-            else:
-                task_for_resolve = task
 
             if not url:
-                yield {"type": "action", "message": f"🌐 Resolving official website..."}
-                nvidia_key = os.getenv("NVIDIA_API_KEY")
-                pplx_key = os.getenv("PERPLEXITY_API_KEY")
-                
+                yield {"type": "action", "message": "🌐 Resolving starting URL..."}
                 resolved_url = await _resolve_url_via_llm_chain(
                     task=task_for_resolve,
-                    nvidia_key=nvidia_key,
+                    nvidia_key=os.getenv("NVIDIA_API_KEY"),
                     google_model=self.model,
-                    pplx_key=pplx_key
+                    pplx_key=os.getenv("PERPLEXITY_API_KEY"),
                 )
-                
                 if resolved_url:
                     url = resolved_url
                     yield {"type": "action", "message": f"✨ Resolved to: {url}"}
 
+        # Navigate to starting URL (or Google as absolute fallback)
         if url:
-            url = _sanitize_url(url)  # Strip Google redirect wrappers
+            url = _sanitize_url(url)
             yield {"type": "action", "message": f"🔗 Navigating to {url}"}
             try:
                 await self._navigate(url)
@@ -607,239 +647,291 @@ class BrowserSubAgent:
             except Exception as e:
                 yield {"type": "error", "message": f"Navigation failed: {e}"}
                 return
-
-        # ── Search within the loaded page (if query was extracted) ─────────
-        if query:
-            yield {"type": "action", "message": f"🔍 Searching: {query}"}
-            searched = await self._universal_search(query)
-            if searched:
-                await asyncio.sleep(2.0)
-                yield {"type": "action", "message": "✅ Search submitted"}
-
-        # ── Google fallback: if still on about:blank, search Google ──────
-        current = self.page.url
-        if not current or current in ("about:blank", ""):
-            # Use clean brand name for a better search query
-            brand = _extract_brand_name(task)
-            google_query = brand + " official website" if brand else (query or task)
-            yield {"type": "action", "message": f"🔍 Searching Google: {google_query}"}
+        else:
+            # Absolute fallback: Google search the task itself
+            import urllib.parse
+            google_url = f"https://www.google.com/search?q={urllib.parse.quote_plus(task)}"
+            yield {"type": "action", "message": f"🔍 No URL found — searching Google: {task[:60]}"}
             try:
-                import urllib.parse
-                google_url = f"https://www.google.com/search?q={urllib.parse.quote_plus(google_query)}"
                 await self._navigate(google_url)
                 yield {"type": "action", "message": f"✅ Google search loaded"}
             except Exception as e:
                 yield {"type": "error", "message": f"Google fallback failed: {e}"}
                 return
 
-        # ── Early exit for navigation/search-only tasks ──────────────────────
-        # If we successfully submitted a search query via _universal_search on a known URL, 
-        # or if it was a pure navigation command, we can return the page state 
-        # immediately instead of entering the Gemini loop, which often hallucinates 
-        # actions after finding the target.
-        if (url and not query) or (url and query and searched) or (url and not searched):
-            logger.info(f"[SubAgent] Task satisfied via pre-navigation/search. URL={self.page.url}")
-            try:
-                text = await self._extract_text()
-            except Exception:
-                text = ""
-            yield {
-                "type": "result",
-                "message": "✅ Navigation complete",
-                "data": {
-                    "result": text[:3000] if text else f"Opened {self.page.url}",
-                    "final_url": self.page.url,
-                    "steps_taken": 1,
-                },
-            }
-            return
+        # Activate visual AI status banner
+        try:
+            await self.page.evaluate("if(window.__setPantherStatus) window.__setPantherStatus(true)")
+        except Exception:
+            pass
+
+        # ══════════════════════════════════════════════════════════════════
+        # Phase 2: Pure Vision-Action Loop — GEMINI IS IN FULL CONTROL.
+        # Screenshot → Accessibility Tree → Ask Gemini → Execute → Repeat
+        # Only exits when Gemini returns {"done": true} or max steps hit.
+        # ══════════════════════════════════════════════════════════════════
 
         # ── Main agent loop ──────────────────────────────────────────────
-        retries = 0
+        parse_retries = 0
+        action_retries = 0
+        _last_action_sig = None  # Track repeated identical actions
+        _repeat_count = 0
 
-        for step in range(1, self.max_steps + 1):
-            try:
-                # Build accessibility tree + screenshot
-                tree_text, element_map = await self._build_accessibility_tree()
-                self._element_map = element_map
-                screenshot_b64 = await self._screenshot()
-                tabs_info = await self._get_tabs_info()
+        try:
+            for step in range(1, self.max_steps + 1):
+                try:
+                    # ── CDP Fix: Manually ensure UI Overlay is injected ───────
+                    # add_init_script is unreliable in CDP mode. Idempotently 
+                    # inject the UI script via evaluate at every step.
+                    try:
+                        await self.page.evaluate(UI_OVERLAY_SCRIPT)
+                    except Exception as e:
+                        logger.debug(f"[SubAgent] UI injection failed (likely non-navigated page): {e}")
 
-                state_summary = (
-                    f"URL: {self.page.url}\n"
-                    f"Title: {await self.page.title()}\n"
-                    f"Tabs: {tabs_info}\n"
-                    f"\nInteractive Elements:\n{tree_text or '(no interactive elements found)'}"
-                )
+                    # ── Pause checkpoint (top of each loop iteration) ─────────
+                    if self.dispatcher and not self.dispatcher.running_event.is_set():
+                        yield {"type": "status", "message": "⏸ Agent paused — waiting for resume..."}
+                        await self.dispatcher.running_event.wait()
+                        yield {"type": "status", "message": "▶ Agent resumed"}
 
-                yield {
-                    "type": "action",
-                    "message": f"📸 Step {step}: Analyzing page... ({len(element_map)} elements found)",
-                }
+                    # Build accessibility tree + screenshot
+                    tree_text, element_map = await self._build_accessibility_tree()
+                    self._element_map = element_map
+                    screenshot_b64 = await self._screenshot()
+                    tabs_info = await self._get_tabs_info()
 
-                # No Gemini? Extract and return
-                if not self.model:
-                    text = await self._extract_text()
+                    state_summary = (
+                        f"URL: {self.page.url}\n"
+                        f"Title: {await self.page.title()}\n"
+                        f"Tabs: {tabs_info}\n"
+                        f"\nInteractive Elements:\n{tree_text or '(no interactive elements found)'}"
+                    )
+
                     yield {
-                        "type": "result",
-                        "message": "✅ Done (no Gemini for planning)",
-                        "data": {
-                            "result": text[:3000] or "Page loaded.",
-                            "final_url": self.page.url,
-                            "steps_taken": step,
-                        },
+                        "type": "action",
+                        "message": f"📸 Step {step}: Analyzing page... ({len(element_map)} elements found)",
                     }
-                    return
 
-                # Ask Gemini
-                plan = await self._ask_gemini(task, state_summary, screenshot_b64)
-
-                if plan is None:
-                    retries += 1
-                    if retries >= 3:
+                    # No AI provider? Extract and return
+                    if self._provider == "none":
                         text = await self._extract_text()
                         yield {
                             "type": "result",
-                            "message": "⚠️ Planning failed, returning page content",
+                            "message": "✅ Done (no Gemini for planning)",
                             "data": {
-                                "result": text[:3000] or "Planning failed.",
+                                "result": text[:3000] or "Page loaded.",
                                 "final_url": self.page.url,
                                 "steps_taken": step,
                             },
                         }
                         return
-                    continue
 
-                retries = 0
+                    # Ask Gemini
+                    plan = await self._ask_llm(task, state_summary, screenshot_b64)
 
-                # Done?
-                if plan.get("done"):
-                    result = plan.get("params", {}).get("result", "Task complete.")
-                    yield {
-                        "type": "result",
-                        "message": "✅ Task complete",
-                        "data": {
-                            "result": result,
-                            "screenshot": screenshot_b64,
-                            "final_url": self.page.url,
-                            "steps_taken": step,
-                        },
-                    }
-                    return
+                    if plan is None:
+                        parse_retries += 1
+                        self.history.append({
+                            "step": step,
+                            "action": "parse_error",
+                            "reason": "Gemini response failed to parse",
+                            "success": False,
+                            "url_after": self.page.url,
+                        })
+                        if parse_retries >= 5:
+                            text = await self._extract_text()
+                            yield {
+                                "type": "result",
+                                "message": "⚠️ Planning failed, returning page content",
+                                "data": {
+                                    "result": text[:3000] or "Planning failed.",
+                                    "final_url": self.page.url,
+                                    "steps_taken": step,
+                                },
+                            }
+                            return
+                        yield {"type": "action", "message": f"⚠️ Parse error (retry {parse_retries}/5)"}
+                        continue
 
-                # Execute
-                action_name = plan.get("action", "")
-                reasoning = plan.get("reasoning", "")
-                yield {
-                    "type": "action",
-                    "message": f"🔄 Step {step}: {action_name} — {reasoning[:80]}",
-                }
+                    parse_retries = 0  # Reset on successful parse
 
-                ok = await self._execute(plan)
-                if not ok:
-                    retries += 1
-                    yield {"type": "action", "message": f"⚠️ Failed (retry {retries}/3)"}
-                    if retries >= 3:
-                        text = await self._extract_text()
+                    # Done?
+                    if plan.get("done"):
+                        result = plan.get("params", {}).get("result", "Task complete.")
                         yield {
                             "type": "result",
-                            "message": "⚠️ Returning page content",
+                            "message": "✅ Task complete",
                             "data": {
-                                "result": text[:3000] or "Actions failed.",
+                                "result": result,
+                                "screenshot": screenshot_b64,
                                 "final_url": self.page.url,
                                 "steps_taken": step,
                             },
                         }
                         return
-                else:
-                    await asyncio.sleep(0.5)
 
-            except Exception as e:
-                logger.error(f"[SubAgent] Step {step}: {e}")
-                retries += 1
-                if retries >= 3:
+                    # Execute action
+                    action_name = plan.get("action", "")
+                    reasoning = plan.get("reasoning", "")
+
+                    # ── Action repetition detection (Comet anti-loop) ────────
+                    action_sig = (action_name, json.dumps(plan.get("params", {}), sort_keys=True))
+                    if action_sig == _last_action_sig:
+                        _repeat_count += 1
+                        if _repeat_count >= 3:
+                            yield {"type": "action", "message": "🔄 Same action repeated 3x — scrolling for new context"}
+                            await self.page.mouse.wheel(0, 400)
+                            await asyncio.sleep(1.0)
+                            _repeat_count = 0
+                            continue
+                    else:
+                        _last_action_sig = action_sig
+                        _repeat_count = 0
+
                     yield {
-                        "type": "result",
-                        "message": "⚠️ Errors, returning content",
-                        "data": {
-                            "result": await self._extract_text() or str(e),
-                            "final_url": self.page.url,
-                            "steps_taken": step,
-                        },
+                        "type": "action",
+                        "message": f"🔄 Step {step}: {action_name} — {reasoning[:80]}",
                     }
-                    return
 
-        # Max steps
-        yield {
-            "type": "result",
-            "message": f"⚠️ Max steps ({self.max_steps})",
-            "data": {
-                "result": await self._extract_text() or "Max steps reached.",
-                "final_url": self.page.url,
-                "steps_taken": self.max_steps,
-            },
-        }
+                    ok = await self._execute(plan)
+
+                    # Append to history with result
+                    self.history.append({
+                        "step": step,
+                        "action": action_name,
+                        "reason": reasoning[:80],
+                        "success": ok,
+                        "url_after": self.page.url,
+                    })
+
+                    if not ok:
+                        action_retries += 1
+                        yield {"type": "action", "message": f"⚠️ Action failed (retry {action_retries}/3)"}
+                        if action_retries >= 3:
+                            text = await self._extract_text()
+                            yield {
+                                "type": "result",
+                                "message": "⚠️ Returning page content",
+                                "data": {
+                                    "result": text[:3000] or "Actions failed.",
+                                    "final_url": self.page.url,
+                                    "steps_taken": step,
+                                },
+                            }
+                            return
+                    else:
+                        action_retries = 0  # Reset on successful action
+
+                        # ── Post-action stabilization (Bug 3 fix) ────────────
+                        try:
+                            await self.page.wait_for_load_state("domcontentloaded", timeout=5000)
+                        except Exception:
+                            pass
+                        await asyncio.sleep(1.5)  # Extended stabilization for Comet-style reliability
+
+                except Exception as e:
+                    logger.error(f"[SubAgent] Step {step}: {e}")
+                    self.history.append({
+                        "step": step,
+                        "action": "exception",
+                        "reason": str(e)[:80],
+                        "success": False,
+                        "url_after": self.page.url if self.page else "unknown",
+                    })
+                    action_retries += 1
+                    yield {"type": "action", "message": f"⚠️ Error: {str(e)[:100]}"}
+                    if action_retries >= 3:
+                        yield {
+                            "type": "result",
+                            "message": "⚠️ Errors, returning content",
+                            "data": {
+                                "result": await self._extract_text() or str(e),
+                                "final_url": self.page.url,
+                                "steps_taken": step,
+                            },
+                        }
+                        return
+
+            # Max steps
+            yield {
+                "type": "result",
+                "message": f"⚠️ Max steps ({self.max_steps})",
+                "data": {
+                    "result": await self._extract_text() or "Max steps reached.",
+                    "final_url": self.page.url,
+                    "steps_taken": self.max_steps,
+                },
+            }
+
+        except Exception as loop_error:
+            # ── Outer safety net (Bug 6 fix) ─ generator never dies silently ──
+            logger.error(f"[SubAgent] Loop crashed: {loop_error}")
+            yield {
+                "type": "error",
+                "message": f"💥 Agent loop crashed: {str(loop_error)[:200]}",
+            }
 
     # ── Accessibility Tree ───────────────────────────────────────────────────
 
     async def _build_accessibility_tree(self) -> Tuple[str, Dict[int, dict]]:
         """
-        Build a numbered list of interactive elements using Playwright's
-        accessibility snapshot. This is what the LLM reasons about.
-
-        Returns:
-            (tree_text, element_map) where element_map maps index to element info
+        Build a numbered list of interactive elements WITH bounding boxes.
+        Uses JS evaluation to get element info AND screen coordinates.
+        Falls back to Playwright accessibility snapshot if JS fails.
         """
         try:
-            snapshot = await self.page.accessibility.snapshot()
+            items = await self.page.evaluate("""() => {
+                const INTERACTIVE = 'a, button, input, textarea, select, ' +
+                    '[role="button"], [role="link"], [role="searchbox"], ' +
+                    '[role="textbox"], [role="combobox"], [role="checkbox"], ' +
+                    '[role="menuitem"], [role="tab"], [role="switch"], ' +
+                    '[tabindex]:not([tabindex="-1"])';
+                const els = document.querySelectorAll(INTERACTIVE);
+                const results = [];
+                for (let i = 0; i < Math.min(els.length, 50); i++) {
+                    const el = els[i];
+                    const rect = el.getBoundingClientRect();
+                    if (rect.width === 0 && rect.height === 0) continue;
+                    if (rect.bottom < 0 || rect.top > window.innerHeight) continue;
+                    const role = el.getAttribute('role') || el.tagName.toLowerCase();
+                    const name = el.getAttribute('aria-label')
+                        || el.textContent?.trim()?.slice(0, 60)
+                        || el.placeholder || el.name || '';
+                    results.push({
+                        role: role,
+                        name: name,
+                        value: el.value || '',
+                        type: el.type || '',
+                        center_x: Math.round(rect.x + rect.width / 2),
+                        center_y: Math.round(rect.y + rect.height / 2),
+                        width: Math.round(rect.width),
+                        height: Math.round(rect.height),
+                    });
+                }
+                return results;
+            }""")
         except Exception as e:
-            logger.warning(f"[SubAgent] Accessibility snapshot failed: {e}")
+            logger.warning(f"[SubAgent] Accessibility tree JS failed: {e}")
             return await self._build_tree_fallback()
 
-        if not snapshot:
+        if not items:
             return await self._build_tree_fallback()
 
         elements: List[str] = []
         element_map: Dict[int, dict] = {}
-        idx = [1]  # mutable counter
 
-        INTERACTIVE_ROLES = {
-            'button', 'link', 'textbox', 'searchbox', 'combobox',
-            'checkbox', 'radio', 'slider', 'switch', 'menuitem',
-            'tab', 'option', 'spinbutton', 'textarea',
-        }
+        for i, item in enumerate(items, 1):
+            role = item.get('role', '')
+            name = item.get('name', '[unlabeled]')
+            if len(name) > 60:
+                name = name[:57] + "..."
 
-        def _walk(node: dict):
-            role = node.get('role', '')
-            name = (node.get('name', '') or '').strip()
-            value = (node.get('value', '') or '').strip()
+            display = f"[{i}] {role} '{name}'"
+            if item.get('value') and role in ('input', 'textarea', 'textbox', 'searchbox', 'combobox'):
+                display += f"  (value: '{item['value'][:30]}')"
 
-            if role in INTERACTIVE_ROLES:
-                i = idx[0]
-                label = name or value or '[unlabeled]'
-                # Truncate long labels
-                if len(label) > 60:
-                    label = label[:57] + "..."
-                display = f"[{i}] {role} '{label}'"
-                if value and role in ('textbox', 'searchbox', 'combobox', 'textarea'):
-                    display += f"  (value: '{value[:30]}')"
-                elements.append(display)
-                element_map[i] = {
-                    "role": role,
-                    "name": name,
-                    "value": value,
-                }
-                idx[0] += 1
-
-            for child in node.get('children', []):
-                _walk(child)
-
-        _walk(snapshot)
-
-        # Cap at 50 elements to avoid overwhelming the LLM
-        if len(elements) > 50:
-            elements = elements[:50]
-            elements.append(f"... ({idx[0] - 51} more elements, scroll to see)")
+            elements.append(display)
+            element_map[i] = item
 
         return "\n".join(elements), element_map
 
@@ -969,11 +1061,12 @@ class BrowserSubAgent:
 
         # ── Phase 3: Click the search input to focus it ───────────────────
         try:
-            await target_el.click(timeout=3000)
-            await asyncio.sleep(0.5)
-            # Clear any existing content
-            await target_el.fill("")
-            await asyncio.sleep(0.3)
+            async with self.human._allow_action():
+                await target_el.click(timeout=3000)
+                await asyncio.sleep(0.5)
+                # Clear any existing content
+                await target_el.fill("")
+                await asyncio.sleep(0.3)
         except Exception as e:
             logger.warning(f"[SubAgent] Could not click search input: {e}")
             return False
@@ -1076,17 +1169,182 @@ class BrowserSubAgent:
         except Exception:
             return ""
 
-    # ── Gemini planning ──────────────────────────────────────────────────────
+    # ── AI Planning (NVIDIA NIM primary, Gemini fallback) ─────────────────────
 
-    async def _ask_gemini(
+    async def _ask_llm(
         self, task: str, state: str, screenshot_b64: str
     ) -> Optional[dict]:
-        if not self.model:
-            return None
+        """Ask the AI for the next browser action. Uses NVIDIA NIM (primary) or Gemini (fallback)."""
+        if self._provider == "nvidia":
+            return await self._ask_nvidia(task, state, screenshot_b64)
+        elif self._provider == "gemini" and self.model:
+            return await self._ask_gemini_fallback(task, state, screenshot_b64)
+        return None
+
+    async def _ask_nvidia(
+        self, task: str, state: str, screenshot_b64: str
+    ) -> Optional[dict]:
+        """Call NVIDIA NIM Vision API for next browser action."""
 
         history = ""
         for h in self.history[-8:]:
-            history += f"  Step {h['step']}: {h['action']} — {h['reason'][:50]}\n"
+            status = "✅" if h.get('success') else "❌"
+            history += f"  Step {h['step']}: {status} {h['action']} — {h.get('reason', '')[:50]}"
+            if h.get('url_after'):
+                history += f" (url: {h['url_after'][:40]})"
+            history += "\n"
+
+        prompt = (
+            f"{BROWSER_AGENT_PROMPT}\n\n"
+            f"USER TASK: {task}\n\n"
+            f"CURRENT STATE:\n{state}\n"
+        )
+        if history:
+            prompt += f"\nACTION HISTORY:\n{history}\n"
+        prompt += "\nReturn your next action as JSON."
+
+        # ── Build messages with optional screenshot ───────────────────
+        if screenshot_b64 and len(screenshot_b64) > 100:
+            model = self.nvidia_vision_model
+            user_content = [
+                {"type": "text", "text": prompt},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/png;base64,{screenshot_b64}"
+                    }
+                }
+            ]
+        else:
+            model = self.nvidia_text_model
+            user_content = prompt
+
+        messages = [
+            {"role": "user", "content": user_content}
+        ]
+
+        # ── Rate-limit aware call with auto-retry ─────────────────────
+        max_api_retries = 2
+        for attempt in range(max_api_retries + 1):
+            try:
+                headers = {
+                    "Authorization": f"Bearer {self.nvidia_api_key}",
+                    "Content-Type": "application/json",
+                }
+                payload = {
+                    "model": model,
+                    "messages": messages,
+                    "max_tokens": 512,
+                    "temperature": 0.2,
+                    "stream": False,
+                }
+
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        f"{self.nvidia_base_url}/chat/completions",
+                        headers=headers,
+                        json=payload,
+                        timeout=aiohttp.ClientTimeout(total=30),
+                    ) as resp:
+                        if resp.status == 429:
+                            wait_secs = min(10 * (attempt + 1), 30)
+                            if attempt < max_api_retries:
+                                logger.warning(f"[SubAgent] NVIDIA 429, waiting {wait_secs}s (attempt {attempt+1})")
+                                await asyncio.sleep(wait_secs)
+                                continue
+                            else:
+                                logger.error("[SubAgent] NVIDIA quota exhausted")
+                                return None
+
+                        if resp.status != 200:
+                            body = await resp.text()
+                            logger.error(f"[SubAgent] NVIDIA API error {resp.status}: {body[:200]}")
+                            return None
+
+                        result = await resp.json()
+
+                raw = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+                if not raw:
+                    logger.warning("[SubAgent] NVIDIA returned empty response")
+                    return None
+
+                logger.debug(f"[SubAgent] NVIDIA raw: {raw[:300]}")
+
+                # ── Robust JSON extraction ────────────────────────────
+                if '```' in raw:
+                    raw = re.sub(r'```(?:json)?\s*', '', raw).strip().rstrip('`')
+
+                start = raw.find('{')
+                end = raw.rfind('}')
+                if start != -1 and end > start:
+                    raw = raw[start:end + 1]
+
+                plan = json.loads(raw)
+
+                if plan.get("action") == "done":
+                    plan["done"] = True
+
+                return plan
+
+            except json.JSONDecodeError:
+                logger.warning("[SubAgent] NVIDIA returned non-JSON, trying re-prompt")
+                # Try a text-only model with strict JSON instruction
+                try:
+                    retry_messages = [
+                        {"role": "user", "content": prompt},
+                        {"role": "assistant", "content": raw if 'raw' in dir() else ""},
+                        {"role": "user", "content": (
+                            "That was not valid JSON. Respond with ONLY a JSON object:\n"
+                            '{"reasoning": "...", "action": "action_name", "params": {...}, "done": false}'
+                        )}
+                    ]
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(
+                            f"{self.nvidia_base_url}/chat/completions",
+                            headers={"Authorization": f"Bearer {self.nvidia_api_key}", "Content-Type": "application/json"},
+                            json={"model": self.nvidia_text_model, "messages": retry_messages, "max_tokens": 512, "temperature": 0.1, "stream": False},
+                            timeout=aiohttp.ClientTimeout(total=15),
+                        ) as resp2:
+                            if resp2.status == 200:
+                                r2 = await resp2.json()
+                                raw2 = r2.get("choices", [{}])[0].get("message", {}).get("content", "")
+                                if '```' in raw2:
+                                    raw2 = re.sub(r'```(?:json)?\s*', '', raw2).strip().rstrip('`')
+                                s2 = raw2.find('{')
+                                e2 = raw2.rfind('}')
+                                if s2 != -1 and e2 > s2:
+                                    raw2 = raw2[s2:e2 + 1]
+                                plan = json.loads(raw2)
+                                if plan.get("action") == "done":
+                                    plan["done"] = True
+                                return plan
+                except Exception as e2:
+                    logger.error(f"[SubAgent] NVIDIA re-prompt failed: {e2}")
+                return None
+
+            except Exception as e:
+                err_str = str(e).lower()
+                if '429' in err_str or 'rate' in err_str:
+                    if attempt < max_api_retries:
+                        await asyncio.sleep(10)
+                        continue
+                logger.error(f"[SubAgent] NVIDIA error: {e}")
+                return None
+
+        return None
+
+    async def _ask_gemini_fallback(
+        self, task: str, state: str, screenshot_b64: str
+    ) -> Optional[dict]:
+        """Fallback: use Gemini for planning (same logic as before)."""
+
+        history = ""
+        for h in self.history[-8:]:
+            status = "✅" if h.get('success') else "❌"
+            history += f"  Step {h['step']}: {status} {h['action']} — {h.get('reason', '')[:50]}"
+            if h.get('url_after'):
+                history += f" (url: {h['url_after'][:40]})"
+            history += "\n"
 
         prompt = (
             f"{BROWSER_AGENT_PROMPT}\n\n"
@@ -1109,37 +1367,91 @@ class BrowserSubAgent:
                     None, lambda: self.model.generate_content(prompt)
                 )
 
-            raw = resp.text.strip()
-            logger.debug(f"[SubAgent] Gemini: {raw[:200]}")
+            try:
+                raw = resp.text.strip()
+            except (ValueError, AttributeError):
+                return None
 
-            # Robust JSON extraction
-            json_match = re.search(r'\{(?:[^{}]|(?(r)\{.*\}))*\}', raw, re.DOTALL)
-            if json_match:
-                raw = json_match.group(0)
-            elif "```json" in raw:
-                raw = raw.split("```json")[1].split("```")[0].strip()
-            elif "```" in raw:
-                raw = raw.split("```")[1].split("```")[0].strip()
-
+            if '```' in raw:
+                raw = re.sub(r'```(?:json)?\s*', '', raw).strip().rstrip('`')
+            start = raw.find('{')
+            end = raw.rfind('}')
+            if start != -1 and end > start:
+                raw = raw[start:end + 1]
             plan = json.loads(raw)
-            self.history.append({
-                "step": len(self.history) + 1,
-                "action": plan.get("action", "?"),
-                "reason": plan.get("reasoning", ""),
-            })
+            if plan.get("action") == "done":
+                plan["done"] = True
             return plan
 
         except Exception as e:
-            logger.error(f"[SubAgent] Gemini error: {e}")
+            logger.error(f"[SubAgent] Gemini fallback error: {e}")
             return None
 
     # ── Action execution ─────────────────────────────────────────────────────
+
+    async def _call_perplexity_research(self, query: str) -> str:
+        """Consult Perplexity API for UI navigation instructions."""
+        api_key = os.getenv("PERPLEXITY_API_KEY")
+        if not api_key:
+            logger.error("[SubAgent] PERPLEXITY_API_KEY not found in .env")
+            return "Error: Perplexity API key missing."
+        
+        logger.info(f"[SubAgent] Consulting Perplexity API for: '{query}'")
+        try:
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": "sonar-pro",
+                "messages": [
+                    {"role": "system", "content": "You are assisting an AI browser agent. Keep answers extremely brief. Explain exactly where to click to achieve the user's goal."},
+                    {"role": "user", "content": query}
+                ],
+                "max_tokens": 512,
+                "temperature": 0.1
+            }
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://api.perplexity.ai/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=45)
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        ans = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                        logger.info(f"[SubAgent] Perplexity insight received: {ans[:100]}...")
+                        return ans
+                    else:
+                        err = await resp.text()
+                        logger.error(f"[SubAgent] Perplexity API error {resp.status}: {err}")
+                        return f"Error: Perplexity returned {resp.status}"
+        except Exception as e:
+            logger.error(f"[SubAgent] Failed to call Perplexity: {e}")
+            return f"Error: {e}"
 
     async def _execute(self, plan: dict) -> bool:
         action = plan.get("action", "")
         params = plan.get("params", {})
 
         try:
+            if action == "research":
+                # Look for query in main dict or params
+                query = plan.get("query", params.get("query", ""))
+                if query:
+                    ans = await self._call_perplexity_research(query)
+                    if ans and not ans.startswith("Error"):
+                        # Inject directly into history so the next turn sees it immediately
+                        self.history.append({
+                            "step": 0,
+                            "action": "system_insight",
+                            "reason": f"Perplexity API Instruction: {ans}",
+                            "success": True,
+                            "url_after": self.page.url
+                        })
+                return True
+            
             if action == "navigate":
                 await self._navigate(params.get("url", ""))
 
@@ -1218,109 +1530,88 @@ class BrowserSubAgent:
     # ── Element interaction by index ─────────────────────────────────────────
 
     async def _click_by_index(self, idx: int) -> bool:
-        """Click element by accessibility tree index."""
+        """Click element by accessibility tree index using Bezier mouse."""
         info = self._element_map.get(idx, {})
-        role = info.get("role", "")
-        name = info.get("name", "")
+        cx = info.get("center_x")
+        cy = info.get("center_y")
 
-        strategies = []
+        if cx is not None and cy is not None:
+            try:
+                await self.human.click(x=float(cx), y=float(cy))
+                await asyncio.sleep(0.3)
+                return True
+            except Exception as e:
+                logger.warning(f"[SubAgent] Bezier click at ({cx},{cy}) failed: {e}")
+
+        # Fallback: try Playwright role-based click if no coordinates
+        name = info.get("name", "")
+        role = info.get("role", "")
         if name:
+            strategies = []
             if role in ('button',):
                 strategies.append(lambda: self.page.get_by_role("button", name=name, exact=False).first)
-            elif role in ('link',):
+            elif role in ('link', 'a'):
                 strategies.append(lambda: self.page.get_by_role("link", name=name, exact=False).first)
-            elif role in ('tab',):
-                strategies.append(lambda: self.page.get_by_role("tab", name=name, exact=False).first)
-            elif role in ('menuitem',):
-                strategies.append(lambda: self.page.get_by_role("menuitem", name=name, exact=False).first)
+            strategies.append(lambda: self.page.get_by_text(name, exact=False).first)
 
-            # Generic strategies
-            strategies.extend([
-                lambda: self.page.get_by_text(name, exact=False).first,
-                lambda: self.page.get_by_label(name, exact=False).first,
-                lambda: self.page.get_by_title(name, exact=False).first,
-                lambda: self.page.locator(f'[aria-label="{name}"]').first,
-                lambda: self.page.locator(f'button:has-text("{name}")').first,
-                lambda: self.page.locator(f'a:has-text("{name}")').first,
-            ])
+            for get_el in strategies:
+                try:
+                    el = get_el()
+                    if await el.is_visible(timeout=800):
+                        await el.scroll_into_view_if_needed(timeout=2000)
+                        async with self.human._allow_action():
+                            await el.click(timeout=3000)
+                        return True
+                except Exception:
+                    continue
 
-        # Try each strategy
-        for get_el in strategies:
-            try:
-                el = get_el()
-                if await el.is_visible(timeout=800):
-                    await el.scroll_into_view_if_needed(timeout=2000)
-                    await asyncio.sleep(0.1)
-                    await el.click(timeout=3000)
-                    await asyncio.sleep(0.5)
-                    return True
-            except Exception:
-                continue
-
-        # Last resort: use nth element in the accessibility order via JS
-        # To better match Playwright's accessibility tree, we just click the physical center
-        # of the element if we can't find it via strict accessibility locators.
-        try:
-            return await self.page.evaluate("""(idx) => {
-                const els = document.querySelectorAll(
-                    'a, button, input, textarea, select, [role="button"], [role="link"], [role="searchbox"], [tabindex]'
-                );
-                // Since tree order != DOM order, this is highly unreliable.
-                // We'll just try to click it.
-                const el = els[idx - 1];
-                if (el) { 
-                    el.scrollIntoView({behavior: 'smooth', block: 'center'}); 
-                    el.dispatchEvent(new MouseEvent('click', {bubbles: true, cancelable: true, view: window}));
-                    return true; 
-                }
-                return false;
-            }""", idx)
-        except Exception:
-            return False
+        return False
 
     async def _type_by_index(self, idx: int, text: str) -> bool:
-        """Type text into element by accessibility tree index."""
+        """Type text into element by accessibility tree index using Bezier mouse."""
         info = self._element_map.get(idx, {})
-        name = info.get("name", "")
+        cx = info.get("center_x")
+        cy = info.get("center_y")
 
-        strategies = []
+        if cx is not None and cy is not None:
+            try:
+                # Click to focus using Bezier, then type
+                await self.human.click(x=float(cx), y=float(cy))
+                await asyncio.sleep(0.2)
+                # Clear existing content
+                await self.page.keyboard.press("Control+a")
+                await asyncio.sleep(0.05)
+                await self.page.keyboard.press("Delete")
+                await asyncio.sleep(0.1)
+                # Type the text
+                await self.page.keyboard.type(text, delay=40)
+                await asyncio.sleep(0.2)
+                return True
+            except Exception as e:
+                logger.warning(f"[SubAgent] Bezier type at ({cx},{cy}) failed: {e}")
+
+        # Fallback: Playwright locator-based typing
+        name = info.get("name", "")
         if name:
-            strategies.extend([
+            strategies = [
                 lambda: self.page.get_by_label(name, exact=False).first,
                 lambda: self.page.get_by_placeholder(name, exact=False).first,
                 lambda: self.page.get_by_role("textbox", name=name, exact=False).first,
                 lambda: self.page.get_by_role("searchbox", name=name, exact=False).first,
-            ])
+            ]
+            for get_el in strategies:
+                try:
+                    el = get_el()
+                    if await el.is_visible(timeout=800):
+                        async with self.human._allow_action():
+                            await el.click(timeout=2000)
+                            await el.fill("")
+                            await el.fill(text)
+                        return True
+                except Exception:
+                    continue
 
-        for get_el in strategies:
-            try:
-                el = get_el()
-                if await el.is_visible(timeout=800):
-                    await el.click(timeout=2000)
-                    await asyncio.sleep(0.1)
-                    await el.fill("")
-                    await el.fill(text)
-                    await asyncio.sleep(0.2)
-                    return True
-            except Exception:
-                continue
-
-        # JS fallback
-        try:
-            return await self.page.evaluate("""({idx, text}) => {
-                const els = document.querySelectorAll('input, textarea, [role="textbox"], [role="searchbox"], [contenteditable="true"]');
-                const el = els[idx - 1];
-                if (el) {
-                    el.scrollIntoView({behavior: 'smooth', block: 'center'});
-                    el.focus();
-                    el.value = text;
-                    el.dispatchEvent(new Event('input', {bubbles: true}));
-                    return true;
-                }
-                return false;
-            }""", {"idx": idx, "text": text})
-        except Exception:
-            return False
+        return False
 
     async def _click_by_intent(self, intent: str) -> bool:
         """Click element by natural language intent (fallback)."""
@@ -1336,7 +1627,8 @@ class BrowserSubAgent:
             try:
                 el = get_el()
                 if await el.is_visible(timeout=800):
-                    await el.click(timeout=3000)
+                    async with self.human._allow_action():
+                        await el.click(timeout=3000)
                     return True
             except Exception:
                 continue
@@ -1355,8 +1647,9 @@ class BrowserSubAgent:
             try:
                 el = get_el()
                 if await el.is_visible(timeout=800):
-                    await el.click(timeout=2000)
-                    await el.fill(text)
+                    async with self.human._allow_action():
+                        await el.click(timeout=2000)
+                        await el.fill(text)
                     return True
             except Exception:
                 continue

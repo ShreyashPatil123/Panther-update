@@ -1,0 +1,159 @@
+{
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "navigate",
+        "description": "Navigate the browser to a given URL",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "Fully qualified URL to navigate to"
+            }
+          },
+          "required": ["url"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "click",
+        "description": "Click an element identified by CSS selector or SOM label",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "selector": {
+              "type": "string",
+              "description": "CSS selector for the element"
+            },
+            "som_label": {
+              "type": "integer",
+              "description": "SOM numeric label from the annotated screenshot"
+            },
+            "description": {
+              "type": "string",
+              "description": "Human-readable description of what is being clicked"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "type",
+        "description": "Type text into a focused or specified input element",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "selector": {
+              "type": "string",
+              "description": "CSS selector for the input element"
+            },
+            "text": {
+              "type": "string",
+              "description": "Text to type"
+            },
+            "press_enter": {
+              "type": "boolean",
+              "default": false,
+              "description": "Whether to press Enter after typing"
+            }
+          },
+          "required": ["text"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "scroll",
+        "description": "Scroll the page in a direction",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "direction": {
+              "type": "string",
+              "enum": ["up", "down", "left", "right"],
+              "description": "Direction to scroll"
+            },
+            "amount_px": {
+              "type": "integer",
+              "default": 500,
+              "description": "Number of pixels to scroll"
+            }
+          },
+          "required": ["direction"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "extract_data",
+        "description": "Extract structured data from the current page",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "fields": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "List of field names to extract"
+            },
+            "format": {
+              "type": "string",
+              "enum": ["json", "csv", "markdown"],
+              "default": "json",
+              "description": "Output format for extracted data"
+            }
+          },
+          "required": ["fields"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "wait",
+        "description": "Wait for a condition or duration",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "condition": {
+              "type": "string",
+              "description": "CSS selector to wait for"
+            },
+            "duration_ms": {
+              "type": "integer",
+              "description": "Duration to wait in milliseconds"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "finish",
+        "description": "Signal that the task is complete",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "result": {
+              "type": "string",
+              "description": "Summary of what was accomplished"
+            },
+            "data": {
+              "type": "object",
+              "description": "Any extracted data to return"
+            }
+          },
+          "required": ["result"]
+        }
+      }
+    }
+  ]
+}

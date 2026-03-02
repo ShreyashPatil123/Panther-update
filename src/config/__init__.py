@@ -52,9 +52,21 @@ class Settings(BaseSettings):
 
     # Ollama (local model server)
     ollama_enabled: bool = Field(default=False, alias="OLLAMA_ENABLED")
-    ollama_base_url: str = Field(default="http://localhost:11434/v1", alias="OLLAMA_BASE_URL")
-    ollama_model: str = Field(default="llama3", alias="OLLAMA_MODEL")
+    ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")
+    ollama_model: str = Field(default="llama3.2", alias="OLLAMA_MODEL")
     ollama_api_key: Optional[str] = Field(default=None, alias="OLLAMA_API_KEY")
+
+    # AI Router Strategy
+    ai_strategy: str = Field(default="local_first", alias="AI_STRATEGY")
+
+    # Browser Automation
+    browser_headless: bool = Field(default=False, alias="BROWSER_HEADLESS")
+    browser_stealth: bool = Field(default=True, alias="BROWSER_STEALTH")
+    cdp_url: str = Field(default="http://localhost:9222", alias="CDP_URL")
+
+    # Infrastructure (optional)
+    redis_url: Optional[str] = Field(default=None, alias="REDIS_URL")
+    qdrant_url: Optional[str] = Field(default=None, alias="QDRANT_URL")
 
     # UI Settings
     window_width: int = 1400
